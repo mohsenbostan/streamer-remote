@@ -13,6 +13,7 @@ import (
 	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
 	"streamer-remote/internal/supervisor"
+	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitchauth"
 )
 
@@ -93,7 +94,7 @@ func (s *Server) startTwitchLocked(cfg *config.Config, auth *twitchauth.Authenti
 	if s.twitchSession != nil {
 		s.twitchSession.Stop()
 	}
-	s.twitchSession = supervisor.StartTwitch(s.rootCtx, cfg, s.logger, s.dispatcher, auth)
+	s.twitchSession = supervisor.StartTwitch(s.rootCtx, cfg, s.logger, s.dispatcher, auth, s.publishTextToSpeech)
 }
 
 func (s *Server) twitchConnected() bool {
@@ -238,8 +239,24 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("unknown permission %q", req.Permission))
 		return
 	}
+	if text, ok := tts.Message(req.Text); ok {
+		if s.dispatcher.Config().TextToSpeechEnabled {
+			s.publishTextToSpeech(text)
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.dispatcher.Handle(commands.ChatMessage{Username: "dashboard", Permission: perm, Text: req.Text})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) publishTextToSpeech(text string) {
+	s.hub.publish(LiveEvent{
+		Time:  time.Now(),
+		Level: "INFO",
+		Msg:   tts.EventMessage,
+		Attrs: map[string]string{"text": text},
+	})
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {

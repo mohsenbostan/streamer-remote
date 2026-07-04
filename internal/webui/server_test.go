@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/tts"
 )
 
 func testServer(t *testing.T) (*Server, string) {
@@ -143,6 +145,30 @@ func TestTestEndpointDispatchesCommand(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	}
+}
+
+func TestTestEndpointPublishesTextToSpeech(t *testing.T) {
+	srv, _ := testServer(t)
+	ch, unsubscribe := srv.hub.subscribe()
+	defer unsubscribe()
+
+	ts := httptest.NewServer(srv.routes())
+	defer ts.Close()
+
+	resp := doJSON(t, ts, http.MethodPost, "/api/test", testRequest{Permission: "broadcaster", Text: "rc-say: hello chat"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	}
+
+	select {
+	case e := <-ch:
+		if e.Msg != tts.EventMessage || e.Attrs["text"] != "hello chat" {
+			t.Fatalf("expected tts event, got %+v", e)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for tts event")
 	}
 }
 

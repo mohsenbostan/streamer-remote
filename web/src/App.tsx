@@ -4,11 +4,19 @@ import { OverviewTab } from "@/components/OverviewTab"
 import { LiveMonitorTab } from "@/components/LiveMonitorTab"
 import { RewardsTab } from "@/components/RewardsTab"
 import { SettingsTab } from "@/components/SettingsTab"
-import { api } from "@/lib/api"
+import { api, subscribeEvents } from "@/lib/api"
 import { usePolling } from "@/hooks/usePolling"
+import { useEffect } from "react"
 
 export default function App() {
   const { data: status, refresh } = usePolling(() => api.status(), 3000)
+
+  useEffect(() => {
+    return subscribeEvents((event) => {
+      if (event.msg !== "text-to-speech") return
+      speak(event.attrs.text)
+    })
+  }, [])
 
   return (
     <div className="min-h-screen bg-background">
@@ -37,4 +45,9 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function speak(text?: string) {
+  if (!text || !("speechSynthesis" in window)) return
+  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text))
 }

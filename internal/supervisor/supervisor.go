@@ -20,7 +20,6 @@ const (
 	chatQueueSize       = 64
 	redemptionQueueSize = 32
 	executorQueue       = 32
-	textToSpeechQueue   = 8
 
 	// TokenCachePath is shared with the dashboard, which needs its own
 	// Authenticator to manage Channel Points rewards independently of
@@ -69,7 +68,7 @@ type TwitchSession struct {
 // dispatcher. Call Stop when done. The caller is responsible for having
 // already ensured a usable token exists (see twitchauth.Authenticator) —
 // this does not itself run interactive auth.
-func StartTwitch(parentCtx context.Context, cfg *config.Config, logger *slog.Logger, dispatcher *commands.Dispatcher, auth *twitchauth.Authenticator) *TwitchSession {
+func StartTwitch(parentCtx context.Context, cfg *config.Config, logger *slog.Logger, dispatcher *commands.Dispatcher, auth *twitchauth.Authenticator, onTextToSpeech func(string)) *TwitchSession {
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	tokenProvider := func(ctx context.Context) (string, error) {
@@ -89,11 +88,9 @@ func StartTwitch(parentCtx context.Context, cfg *config.Config, logger *slog.Log
 
 	chatEvents := make(chan twitch.ChatEvent, chatQueueSize)
 	redemptionEvents := make(chan twitch.RedemptionEvent, redemptionQueueSize)
-	speaker := tts.NewPlayer(logger, textToSpeechQueue)
 	go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents, redemptionEvents) })
-	go supervise(ctx, logger, "text-to-speech", speaker.Run)
 	go supervise(ctx, logger, "twitch-chat-forwarder", func(ctx context.Context) {
-		forwardTwitchEvents(ctx, chatEvents, dispatcher, speaker)
+		forwardTwitchEvents(ctx, chatEvents, dispatcher, onTextToSpeech)
 	})
 	go supervise(ctx, logger, "twitch-redemption-forwarder", func(ctx context.Context) {
 		forwardRedemptions(ctx, logger, redemptionEvents, dispatcher, client, cfg.Twitch.ClientID, tokenProvider)
@@ -107,15 +104,15 @@ func (s *TwitchSession) Stop() {
 	s.cancel()
 }
 
-func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher, speaker *tts.Player) {
+func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher, onTextToSpeech func(string)) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case e := <-events:
 			if text, ok := tts.Message(e.Text); ok {
-				if dispatcher.Config().TextToSpeechEnabled {
-					speaker.Say(text)
+				if dispatcher.Config().TextToSpeechEnabled && onTextToSpeech != nil {
+					onTextToSpeech(text)
 				}
 				continue
 			}
