@@ -9,6 +9,7 @@ import { api, type Settings, type StatusResponse, type UpdateInfo } from "@/lib/
 import { usePolling } from "@/hooks/usePolling"
 import { toast } from "sonner"
 import { DownloadCloud, LogOut, RefreshCw } from "lucide-react"
+import { useTheme } from "next-themes"
 
 function Field({
   label,
@@ -46,6 +47,7 @@ export function SettingsTab({
   status: StatusResponse | null
   onChanged: () => void
 }) {
+  const { resolvedTheme, setTheme } = useTheme()
   const { data: loaded, refresh } = usePolling<Settings>(() => api.settings(), 60_000)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [deniedKeysText, setDeniedKeysText] = useState("")
@@ -198,6 +200,16 @@ export function SettingsTab({
               </p>
             </div>
             <Switch checked={settings.logDebug} onCheckedChange={(v) => set("logDebug", v)} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+            <div>
+              <p className="text-sm font-medium">Dark mode</p>
+              <p className="text-xs text-muted-foreground">Use the dark dashboard theme</p>
+            </div>
+            <Switch
+              checked={resolvedTheme === "dark"}
+              onCheckedChange={(v) => setTheme(v ? "dark" : "light")}
+            />
           </div>
         </CardContent>
       </Card>
