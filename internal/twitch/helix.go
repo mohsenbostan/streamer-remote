@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -127,4 +128,68 @@ func (h *HelixClient) CreateChatSubscription(ctx context.Context, broadcasterUse
 		},
 	}
 	return h.do(ctx, http.MethodPost, "/eventsub/subscriptions", body, nil)
+}
+
+// CreateRedemptionSubscription subscribes a WebSocket session to every
+// Channel Points redemption on the channel. Redemptions for rewards we
+// don't manage are simply ignored by the dispatcher, so one broad
+// subscription is simpler than tracking per-reward subscriptions.
+func (h *HelixClient) CreateRedemptionSubscription(ctx context.Context, broadcasterUserID, sessionID string) error {
+	body := map[string]any{
+		"type":    "channel.channel_points_custom_reward_redemption.add",
+		"version": "1",
+		"condition": map[string]string{
+			"broadcaster_user_id": broadcasterUserID,
+		},
+		"transport": map[string]string{
+			"method":     "websocket",
+			"session_id": sessionID,
+		},
+	}
+	return h.do(ctx, http.MethodPost, "/eventsub/subscriptions", body, nil)
+}
+
+// CreateCustomReward creates a Channel Points reward the app will listen
+// for redemptions of. Requires the broadcaster to be a Twitch Affiliate
+// or Partner; Twitch returns an error for other accounts, surfaced as-is
+// so the caller can show it to the streamer.
+func (h *HelixClient) CreateCustomReward(ctx context.Context, broadcasterUserID, title string, cost int) (rewardID string, err error) {
+	body := map[string]any{
+		"title":                  title,
+		"cost":                   cost,
+		"prompt":                 "Triggers automatically — no need to type anything.",
+		"is_user_input_required": false,
+	}
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	path := "/channel_points/custom_rewards?broadcaster_id=" + url.QueryEscape(broadcasterUserID)
+	if err := h.do(ctx, http.MethodPost, path, body, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Data) == 0 {
+		return "", fmt.Errorf("helix: reward creation returned no data")
+	}
+	return resp.Data[0].ID, nil
+}
+
+// DeleteCustomReward removes a reward previously created by this app. Per
+// Twitch's rules, a reward can only be deleted by the same Client ID that
+// created it.
+func (h *HelixClient) DeleteCustomReward(ctx context.Context, broadcasterUserID, rewardID string) error {
+	path := fmt.Sprintf("/channel_points/custom_rewards?broadcaster_id=%s&id=%s",
+		url.QueryEscape(broadcasterUserID), url.QueryEscape(rewardID))
+	return h.do(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// UpdateRedemptionStatus marks a redemption FULFILLED (the action ran) or
+// CANCELED (refunds the viewer's points; used when the remote is paused
+// or the action is blacklisted).
+func (h *HelixClient) UpdateRedemptionStatus(ctx context.Context, broadcasterUserID, rewardID, redemptionID, status string) error {
+	path := fmt.Sprintf("/channel_points/custom_rewards/redemptions?broadcaster_id=%s&reward_id=%s&id=%s",
+		url.QueryEscape(broadcasterUserID), url.QueryEscape(rewardID), url.QueryEscape(redemptionID))
+	body := map[string]string{"status": status}
+	return h.do(ctx, http.MethodPatch, path, body, nil)
 }

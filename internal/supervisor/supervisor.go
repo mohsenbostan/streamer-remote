@@ -18,11 +18,24 @@ import (
 )
 
 const (
-	chatQueueSize   = 64
-	executorQueue   = 32
-	tokenCachePath  = "twitch_token.json"
-	twitchAuthScope = "user:read:chat"
+	chatQueueSize       = 64
+	redemptionQueueSize = 32
+	executorQueue       = 32
+
+	// TokenCachePath is also used by the interactive setup wizard (main
+	// package) when it needs a Helix client to manage Channel Points
+	// rewards outside of a running supervisor session.
+	TokenCachePath = "twitch_token.json"
 )
+
+// TwitchAuthScopes are requested unconditionally on every login: a modest
+// upfront ask (read chat, read/manage Channel Points redemptions) so a
+// streamer who later sets up reward-only actions never has to re-auth.
+var TwitchAuthScopes = []string{
+	"user:read:chat",
+	"channel:read:redemptions",
+	"channel:manage:redemptions",
+}
 
 type Options struct {
 	Config    *config.Config
@@ -56,28 +69,33 @@ func Run(ctx context.Context, opts Options) error {
 			return err
 		}
 
-		auth := twitchauth.New(cfg.Twitch.ClientID, tokenCachePath, []string{twitchAuthScope}, logger)
+		auth := twitchauth.New(cfg.Twitch.ClientID, TokenCachePath, TwitchAuthScopes, logger)
 		if _, err := auth.EnsureToken(ctx); err != nil {
 			return err
 		}
+		tokenProvider := func(ctx context.Context) (string, error) {
+			tok, err := auth.EnsureToken(ctx)
+			if err != nil {
+				return "", err
+			}
+			return tok.AccessToken, nil
+		}
 
 		client := &twitch.Client{
-			ClientID: cfg.Twitch.ClientID,
-			Channel:  cfg.Twitch.Channel,
-			Logger:   logger,
-			TokenProvider: func(ctx context.Context) (string, error) {
-				tok, err := auth.EnsureToken(ctx)
-				if err != nil {
-					return "", err
-				}
-				return tok.AccessToken, nil
-			},
+			ClientID:      cfg.Twitch.ClientID,
+			Channel:       cfg.Twitch.Channel,
+			Logger:        logger,
+			TokenProvider: tokenProvider,
 		}
 
 		chatEvents := make(chan twitch.ChatEvent, chatQueueSize)
-		go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents) })
-		go supervise(ctx, logger, "twitch-forwarder", func(ctx context.Context) {
+		redemptionEvents := make(chan twitch.RedemptionEvent, redemptionQueueSize)
+		go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents, redemptionEvents) })
+		go supervise(ctx, logger, "twitch-chat-forwarder", func(ctx context.Context) {
 			forwardTwitchEvents(ctx, chatEvents, dispatcher)
+		})
+		go supervise(ctx, logger, "twitch-redemption-forwarder", func(ctx context.Context) {
+			forwardRedemptions(ctx, logger, redemptionEvents, dispatcher, client, cfg.Twitch.ClientID, tokenProvider)
 		})
 	} else {
 		logger.Info("running in local-only mode: no Twitch connection will be made")
@@ -98,6 +116,48 @@ func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, di
 				Permission: commands.PermissionFromBadges(e.Badges),
 				Text:       e.Text,
 			})
+		}
+	}
+}
+
+// forwardRedemptions runs each Channel Points redemption through the
+// dispatcher and reports the outcome back to Twitch: FULFILLED so it
+// leaves the streamer's redemption queue, or CANCELED so the viewer's
+// points are refunded if the remote was paused or the action is
+// blacklisted.
+func forwardRedemptions(
+	ctx context.Context,
+	logger *slog.Logger,
+	events <-chan twitch.RedemptionEvent,
+	dispatcher *commands.Dispatcher,
+	client *twitch.Client,
+	clientID string,
+	tokenProvider twitch.TokenProvider,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-events:
+			result := dispatcher.HandleRedemption(e.RewardID, e.UserLogin)
+			if result == commands.RedemptionIgnored {
+				continue
+			}
+
+			status := "FULFILLED"
+			if result == commands.RedemptionRefunded {
+				status = "CANCELED"
+			}
+			broadcasterID := client.BroadcasterUserID()
+			token, err := tokenProvider(ctx)
+			if err != nil {
+				logger.Error("could not update redemption status: no token", "error", err)
+				continue
+			}
+			helix := twitch.NewHelixClient(clientID, token)
+			if err := helix.UpdateRedemptionStatus(ctx, broadcasterID, e.RewardID, e.RedemptionID, status); err != nil {
+				logger.Error("failed to update redemption status", "status", status, "error", err)
+			}
 		}
 	}
 }

@@ -92,6 +92,53 @@ func TestUpdateTwitchFieldsAddsMissingKeysToOldFormatFile(t *testing.T) {
 	}
 }
 
+func TestAddAndRemoveRewardAction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if _, err := Load(path); !errors.Is(err, ErrDefaultCreated) {
+		t.Fatalf("expected ErrDefaultCreated, got %v", err)
+	}
+
+	ra := RewardAction{Action: "alt+f4", RewardTitle: "Rage Quit", Cost: 500, RewardID: "reward-1"}
+	if err := AddRewardAction(path, ra); err != nil {
+		t.Fatalf("AddRewardAction failed: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to reload cleanly, got %v", err)
+	}
+	if len(cfg.RewardActions) != 1 || cfg.RewardActions[0] != ra {
+		t.Fatalf("expected saved reward action, got %+v", cfg.RewardActions)
+	}
+
+	if err := AddRewardAction(path, RewardAction{Action: "lwin", RewardTitle: "Lock Screen", Cost: 1000, RewardID: "reward-2"}); err != nil {
+		t.Fatalf("second AddRewardAction failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardActions) != 2 {
+		t.Fatalf("expected 2 reward actions, got %d", len(cfg.RewardActions))
+	}
+
+	if err := RemoveRewardAction(path, "reward-1"); err != nil {
+		t.Fatalf("RemoveRewardAction failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardActions) != 1 || cfg.RewardActions[0].RewardID != "reward-2" {
+		t.Fatalf("expected only reward-2 to remain, got %+v", cfg.RewardActions)
+	}
+
+	// Removing an already-gone ID must be a harmless no-op, not an error.
+	if err := RemoveRewardAction(path, "reward-1"); err != nil {
+		t.Fatalf("expected removing a missing rewardId to be a no-op, got %v", err)
+	}
+}
+
 func TestValidateRejectsBadLimits(t *testing.T) {
 	cfg := &Config{
 		Prefix:       "rc!",

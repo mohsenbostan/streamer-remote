@@ -14,11 +14,20 @@ import (
 // Dispatcher turns incoming chat messages into executed input, enforcing
 // permissions, cooldowns, and the blacklist along the way. It is the one
 // place chat trust boundaries are decided.
+//
+// Moderators and the broadcaster are exempt from cooldowns, the
+// blacklist, and reward-only gating when they type a command themselves —
+// a human mod present in chat is trusted. That exemption does not extend
+// to Channel Points redemptions (see HandleRedemption): anyone can redeem
+// a reward, so the blacklist still applies there.
 type Dispatcher struct {
 	cfg       *config.Config
 	logger    *slog.Logger
 	executor  *Executor
 	blacklist *blacklist
+
+	gatedBySignature map[string]gatedAction
+	gatedByRewardID  map[string]gatedAction
 
 	enabled atomic.Bool
 
@@ -28,12 +37,15 @@ type Dispatcher struct {
 }
 
 func NewDispatcher(cfg *config.Config, logger *slog.Logger, executor *Executor) *Dispatcher {
+	gatedBySignature, gatedByRewardID := buildGatedActions(cfg, logger)
 	d := &Dispatcher{
-		cfg:         cfg,
-		logger:      logger,
-		executor:    executor,
-		blacklist:   buildBlacklist(cfg),
-		lastPerUser: make(map[string]time.Time),
+		cfg:              cfg,
+		logger:           logger,
+		executor:         executor,
+		blacklist:        buildBlacklist(cfg),
+		gatedBySignature: gatedBySignature,
+		gatedByRewardID:  gatedByRewardID,
+		lastPerUser:      make(map[string]time.Time),
 	}
 	d.enabled.Store(true)
 	return d
@@ -59,13 +71,18 @@ func (d *Dispatcher) Handle(msg ChatMessage) {
 		d.logger.Debug("dropped: remote is paused", "user", msg.Username)
 		return
 	}
-	if d.cfg.ModOnlyMode && msg.Permission < Moderator {
+
+	isMod := msg.Permission >= Moderator
+
+	if d.cfg.ModOnlyMode && !isMod {
 		d.logger.Debug("dropped: mod-only mode active", "user", msg.Username)
 		return
 	}
-	if reason := d.checkCooldown(msg.Username, time.Now()); reason != "" {
-		d.logger.Debug("dropped: "+reason, "user", msg.Username)
-		return
+	if !isMod {
+		if reason := d.checkCooldown(msg.Username, time.Now()); reason != "" {
+			d.logger.Debug("dropped: "+reason, "user", msg.Username)
+			return
+		}
 	}
 
 	actions, err := ParseCombo(body, d.cfg)
@@ -73,12 +90,19 @@ func (d *Dispatcher) Handle(msg ChatMessage) {
 		d.logger.Debug("dropped: invalid command", "user", msg.Username, "text", msg.Text, "error", err)
 		return
 	}
-	if reason := d.blacklist.Check(actions); reason != "" {
-		d.logger.Info("blocked command", "user", msg.Username, "text", msg.Text, "reason", reason)
-		return
+
+	if !isMod {
+		if ga, gated := d.gatedBySignature[actionSignature(actions)]; gated {
+			d.logger.Info("blocked: reward-only action", "user", msg.Username, "reward", ga.rewardTitle)
+			return
+		}
+		if reason := d.blacklist.Check(actions); reason != "" {
+			d.logger.Info("blocked command", "user", msg.Username, "text", msg.Text, "reason", reason)
+			return
+		}
+		d.commitCooldown(msg.Username, time.Now())
 	}
 
-	d.commitCooldown(msg.Username, time.Now())
 	hold := EffectiveHoldMs(actions, d.cfg.TapHoldMs)
 	d.executor.Submit(actions, hold)
 	d.logger.Debug("dispatched", "user", msg.Username, "text", msg.Text)

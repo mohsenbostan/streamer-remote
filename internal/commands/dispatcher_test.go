@@ -87,14 +87,103 @@ func TestDispatcherPauseResumeRequiresModerator(t *testing.T) {
 	}
 }
 
-func TestDispatcherBlacklistBlocksCombo(t *testing.T) {
+func TestDispatcherBlacklistBlocksViewersButNotMods(t *testing.T) {
 	cfg := testConfig()
 	cfg.Blacklist.DeniedCombos = [][]string{{"alt", "f4"}}
 	d, ex := testDispatcher(cfg)
 
-	d.Handle(ChatMessage{Username: "viewer1", Permission: Broadcaster, Text: "rc!alt+f4"})
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!alt+f4"})
 	if ex.QueueLen() != 0 {
-		t.Fatal("expected denylisted combo to be blocked even for the broadcaster")
+		t.Fatal("expected denylisted combo to be blocked for an ordinary viewer")
+	}
+
+	// Mods and the broadcaster are trusted to do anything by typing it
+	// themselves; the blacklist is a viewer-facing safety net, not an
+	// absolute lock.
+	d.Handle(ChatMessage{Username: "mod1", Permission: Moderator, Text: "rc!alt+f4"})
+	if ex.QueueLen() != 1 {
+		t.Fatal("expected a moderator to bypass the blacklist")
+	}
+	d.Handle(ChatMessage{Username: "streamer", Permission: Broadcaster, Text: "rc!alt+f4"})
+	if ex.QueueLen() != 2 {
+		t.Fatal("expected the broadcaster to bypass the blacklist")
+	}
+}
+
+func TestDispatcherRewardOnlyActionBlockedInChatForViewersNotMods(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f4", RewardTitle: "Rage Quit", RewardID: "reward-1"},
+	}
+	d, ex := testDispatcher(cfg)
+
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!alt+f4"})
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected reward-gated action typed in chat to be blocked for a viewer")
+	}
+	// Order-independence: "f4+alt" is the same action as "alt+f4".
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!f4+alt"})
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected reward-gated action to be recognized regardless of key order")
+	}
+
+	d.Handle(ChatMessage{Username: "mod1", Permission: Moderator, Text: "rc!alt+f4"})
+	if ex.QueueLen() != 1 {
+		t.Fatal("expected a moderator to bypass reward-only gating")
+	}
+}
+
+func TestDispatcherHandleRedemption(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f4", RewardTitle: "Rage Quit", RewardID: "reward-1"},
+	}
+	d, ex := testDispatcher(cfg)
+
+	if got := d.HandleRedemption("unknown-reward", "viewer1"); got != RedemptionIgnored {
+		t.Fatalf("expected RedemptionIgnored for an unmanaged reward, got %v", got)
+	}
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected no job queued for an ignored redemption")
+	}
+
+	if got := d.HandleRedemption("reward-1", "viewer1"); got != RedemptionFulfilled {
+		t.Fatalf("expected RedemptionFulfilled, got %v", got)
+	}
+	if ex.QueueLen() != 1 {
+		t.Fatal("expected the redemption to queue its action")
+	}
+}
+
+func TestDispatcherHandleRedemptionRefundsWhilePaused(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f4", RewardTitle: "Rage Quit", RewardID: "reward-1"},
+	}
+	d, ex := testDispatcher(cfg)
+	d.enabled.Store(false)
+
+	if got := d.HandleRedemption("reward-1", "viewer1"); got != RedemptionRefunded {
+		t.Fatalf("expected RedemptionRefunded while paused, got %v", got)
+	}
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected no job queued for a refunded redemption")
+	}
+}
+
+func TestDispatcherHandleRedemptionRefundsIfBlacklisted(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f4", RewardTitle: "Rage Quit", RewardID: "reward-1"},
+	}
+	cfg.Blacklist.DeniedCombos = [][]string{{"alt", "f4"}}
+	d, ex := testDispatcher(cfg)
+
+	if got := d.HandleRedemption("reward-1", "viewer1"); got != RedemptionRefunded {
+		t.Fatalf("expected RedemptionRefunded for a blacklisted action, got %v", got)
+	}
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected no job queued when the blacklist blocks a redemption")
 	}
 }
 

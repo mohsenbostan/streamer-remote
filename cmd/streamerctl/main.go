@@ -73,11 +73,14 @@ func main() {
 		checkForUpdate(checkCtx, console, true, false)
 		cancel()
 
-		choice, ok := runMenu(console, func() {
-			updateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			checkForUpdate(updateCtx, console, true, true)
-			cancel()
-		})
+		choice, ok := runMenu(console,
+			func() { manageRewardActions(*configPath, cfg, console) },
+			func() {
+				updateCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				checkForUpdate(updateCtx, console, true, true)
+				cancel()
+			},
+		)
 		if !ok {
 			return
 		}
@@ -196,14 +199,15 @@ const (
 	menuExit
 )
 
-func runMenu(console *bufio.Reader, onCheckUpdates func()) (menuChoice, bool) {
+func runMenu(console *bufio.Reader, onManageRewards, onCheckUpdates func()) (menuChoice, bool) {
 	for {
 		fmt.Println()
 		fmt.Println("What would you like to do?")
 		fmt.Println("  1) Start - connect to Twitch chat")
 		fmt.Println("  2) Test locally - try out keybinds without Twitch")
-		fmt.Println("  3) Check for updates")
-		fmt.Println("  4) Exit")
+		fmt.Println("  3) Manage channel-points-only actions")
+		fmt.Println("  4) Check for updates")
+		fmt.Println("  5) Exit")
 		fmt.Print("> ")
 		switch readLine(console) {
 		case "1":
@@ -211,11 +215,13 @@ func runMenu(console *bufio.Reader, onCheckUpdates func()) (menuChoice, bool) {
 		case "2":
 			return menuTestLocally, true
 		case "3":
+			onManageRewards()
+		case "4":
 			onCheckUpdates()
-		case "4", "":
+		case "5", "":
 			return menuExit, false
 		default:
-			fmt.Println("Please enter 1, 2, 3, or 4.")
+			fmt.Println("Please enter 1, 2, 3, 4, or 5.")
 		}
 	}
 }

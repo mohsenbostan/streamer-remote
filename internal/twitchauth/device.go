@@ -38,13 +38,19 @@ func New(clientID, tokenPath string, scopes []string, logger *slog.Logger) *Auth
 }
 
 // EnsureToken returns a usable access token: from cache, refreshed, or by
-// running the interactive device code flow as a last resort.
+// running the interactive device code flow as a last resort. A cached
+// token missing a scope a newer version of the app now requires (e.g. an
+// existing install picking up a feature that needs extra permissions) is
+// treated as unusable, since refreshing preserves the original grant's
+// scopes rather than expanding them — only a fresh device login can add
+// scopes.
 func (a *Authenticator) EnsureToken(ctx context.Context) (*Token, error) {
 	if tok, err := LoadToken(a.TokenPath); err == nil {
-		if !tok.ExpiringSoon() {
+		if !tok.HasScopes(a.Scopes) {
+			a.Logger.Info("cached Twitch authorization is missing a newly required permission, re-authorizing")
+		} else if !tok.ExpiringSoon() {
 			return tok, nil
-		}
-		if refreshed, err := a.refresh(ctx, tok.RefreshToken); err == nil {
+		} else if refreshed, err := a.refresh(ctx, tok.RefreshToken); err == nil {
 			if saveErr := refreshed.Save(a.TokenPath); saveErr != nil {
 				a.Logger.Warn("failed to persist refreshed token", "error", saveErr)
 			}
@@ -73,10 +79,11 @@ type deviceCodeResponse struct {
 }
 
 type tokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int    `json:"expires_in"`
-	Message      string `json:"message"` // set on "authorization_pending" / "slow_down" errors
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	ExpiresIn    int      `json:"expires_in"`
+	Scope        []string `json:"scope"`
+	Message      string   `json:"message"` // set on "authorization_pending" / "slow_down" errors
 }
 
 func (a *Authenticator) deviceLogin(ctx context.Context) (*Token, error) {
@@ -136,6 +143,7 @@ func (a *Authenticator) deviceLogin(ctx context.Context) (*Token, error) {
 				AccessToken:  tr.AccessToken,
 				RefreshToken: tr.RefreshToken,
 				ExpiresAt:    time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second),
+				Scope:        tr.Scope,
 			}, nil
 		}
 	}
@@ -158,6 +166,7 @@ func (a *Authenticator) refresh(ctx context.Context, refreshToken string) (*Toke
 		AccessToken:  tr.AccessToken,
 		RefreshToken: tr.RefreshToken,
 		ExpiresAt:    time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second),
+		Scope:        tr.Scope,
 	}, nil
 }
 

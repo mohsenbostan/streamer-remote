@@ -34,6 +34,19 @@ type Blacklist struct {
 	DeniedCombos [][]string `yaml:"deniedCombos"`
 }
 
+// RewardAction gates one action (same syntax as a chat combo body, e.g.
+// "lwin" or "alt+f4") behind a Twitch Channel Points reward: viewers can
+// only trigger it by redeeming RewardTitle, never by typing the command in
+// chat. RewardID is filled in automatically once the app creates the
+// reward on Twitch; streamers manage these through the app's menu rather
+// than hand-editing this section.
+type RewardAction struct {
+	Action      string `yaml:"action"`
+	RewardTitle string `yaml:"rewardTitle"`
+	Cost        int    `yaml:"cost"`
+	RewardID    string `yaml:"rewardId"`
+}
+
 type Config struct {
 	Twitch Twitch `yaml:"twitch"`
 
@@ -48,7 +61,8 @@ type Config struct {
 	MaxHoldMs    int `yaml:"maxHoldMs"`
 	MaxMoveStep  int `yaml:"maxMoveStep"`
 
-	Blacklist Blacklist `yaml:"blacklist"`
+	Blacklist     Blacklist      `yaml:"blacklist"`
+	RewardActions []RewardAction `yaml:"rewardActions"`
 
 	LogDebug bool `yaml:"logDebug"`
 }
@@ -78,6 +92,9 @@ maxMoveStep: 300          # upper bound for a single mouse-move command, in pixe
 blacklist:
   deniedKeys: []          # extra keys to block, beyond the built-in unsafe ones
   deniedCombos: []        # extra key combos to block, e.g. [["ctrl", "w"]]
+
+rewardActions: []         # actions only redeemable via Channel Points, never by typing in chat
+                          # managed from the app's menu ("Manage channel-points-only actions"), not by hand
 
 logDebug: false           # verbose logging for troubleshooting
 `
@@ -119,19 +136,10 @@ var ErrDefaultCreated = fmt.Errorf("config: default file created, edit it and re
 // would silently fail to persist anything, leaving setup stuck in a loop.
 // Missing keys are added rather than requiring an exact match.
 func UpdateTwitchFields(path, channel, clientID string) error {
-	data, err := os.ReadFile(path)
+	doc, root, err := loadYAMLDoc(path)
 	if err != nil {
-		return fmt.Errorf("config: read %s: %w", path, err)
+		return err
 	}
-
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("config: parse %s: %w", path, err)
-	}
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return fmt.Errorf("config: %s is not a valid YAML mapping", path)
-	}
-	root := doc.Content[0]
 
 	twitch := yamlMapValue(root, "twitch")
 	if twitch == nil {
@@ -141,6 +149,75 @@ func UpdateTwitchFields(path, channel, clientID string) error {
 	yamlSetMapString(twitch, "channel", channel)
 	yamlSetMapString(twitch, "clientId", clientID)
 
+	return saveYAMLDoc(path, doc)
+}
+
+// AddRewardAction appends a new entry to the rewardActions list, creating
+// the list if it doesn't exist yet. Used once the app has created the
+// corresponding reward on Twitch and knows its RewardID.
+func AddRewardAction(path string, ra RewardAction) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+
+	seq := yamlMapValue(root, "rewardActions")
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		seq = &yaml.Node{Kind: yaml.SequenceNode}
+		root.Content = append(root.Content, yamlScalar("rewardActions"), seq)
+	}
+
+	item := &yaml.Node{Kind: yaml.MappingNode}
+	yamlSetMapString(item, "action", ra.Action)
+	yamlSetMapString(item, "rewardTitle", ra.RewardTitle)
+	yamlSetMapInt(item, "cost", ra.Cost)
+	yamlSetMapString(item, "rewardId", ra.RewardID)
+	seq.Content = append(seq.Content, item)
+
+	return saveYAMLDoc(path, doc)
+}
+
+// RemoveRewardAction deletes the rewardActions entry with the given
+// RewardID, if present. No-op if it's already gone.
+func RemoveRewardAction(path, rewardID string) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+
+	seq := yamlMapValue(root, "rewardActions")
+	if seq == nil {
+		return nil
+	}
+	kept := seq.Content[:0]
+	for _, item := range seq.Content {
+		if item.Kind == yaml.MappingNode {
+			if v := yamlMapValue(item, "rewardId"); v != nil && v.Value == rewardID {
+				continue
+			}
+		}
+		kept = append(kept, item)
+	}
+	seq.Content = kept
+
+	return saveYAMLDoc(path, doc)
+}
+
+func loadYAMLDoc(path string) (doc yaml.Node, root *yaml.Node, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return doc, nil, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return doc, nil, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return doc, nil, fmt.Errorf("config: %s is not a valid YAML mapping", path)
+	}
+	return doc, doc.Content[0], nil
+}
+
+func saveYAMLDoc(path string, doc yaml.Node) error {
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return fmt.Errorf("config: encode %s: %w", path, err)
@@ -173,6 +250,20 @@ func yamlSetMapString(mapNode *yaml.Node, key, value string) {
 	}
 	valNode := &yaml.Node{}
 	valNode.SetString(value)
+	mapNode.Content = append(mapNode.Content, yamlScalar(key), valNode)
+}
+
+// yamlSetMapInt sets key to an integer value in a YAML mapping node,
+// adding the key if it isn't already present.
+func yamlSetMapInt(mapNode *yaml.Node, key string, value int) {
+	valNode := &yaml.Node{}
+	_ = valNode.Encode(value)
+	for i := 0; i+1 < len(mapNode.Content); i += 2 {
+		if mapNode.Content[i].Value == key {
+			mapNode.Content[i+1] = valNode
+			return
+		}
+	}
 	mapNode.Content = append(mapNode.Content, yamlScalar(key), valNode)
 }
 

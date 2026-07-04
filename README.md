@@ -50,6 +50,26 @@ block `alt+tab` or `alt+f4` if that's a concern for a given game). Cooldowns
 (global and per-viewer) and `modOnlyMode` are also config-driven. Regardless
 of config, any moderator can type `rc!pause` to shut it off immediately.
 
+Moderators and the broadcaster are exempt from cooldowns, the blacklist,
+and channel-points-only gating when they type a command themselves — a
+human mod present in chat is trusted with everything, no limits.
+
+## Channel-points-only actions
+
+Some actions are more fun (or more dangerous) as a paid, deliberate
+redemption rather than something anyone can spam in chat — locking the
+screen, `alt+f4`. Pick "Manage channel-points-only actions" from the menu:
+give it the action (same syntax as a chat command, e.g. `alt+f4` or
+`lwin`), a reward title, and a point cost, and the app creates the
+Channel Points reward on Twitch itself — no dashboard visit needed. From
+then on, that action can only be triggered by redeeming the reward; typing
+it in chat is rejected for ordinary viewers (mods can still type it
+directly). If the remote is paused or the action later gets blacklisted,
+redemptions are automatically refunded instead of silently doing nothing.
+
+Requires the channel to be a Twitch Affiliate or Partner (a Twitch
+requirement for Channel Points, not something this app can work around).
+
 ## Logs
 
 Written to `logs/streamer-remote.log` (rotating JSON) and echoed to the

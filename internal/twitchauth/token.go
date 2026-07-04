@@ -15,11 +15,29 @@ type Token struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
+	Scope        []string  `json:"scope"`
 }
 
 // ExpiringSoon reports whether the token needs refreshing before use.
 func (t *Token) ExpiringSoon() bool {
 	return time.Now().Add(10 * time.Minute).After(t.ExpiresAt)
+}
+
+// HasScopes reports whether the token was granted every scope in required.
+// A cached token from before a feature that needs a new scope was added
+// will fail this, which is the signal to re-run the device code flow
+// rather than just refreshing (refreshing can't add scopes).
+func (t *Token) HasScopes(required []string) bool {
+	granted := make(map[string]bool, len(t.Scope))
+	for _, s := range t.Scope {
+		granted[s] = true
+	}
+	for _, s := range required {
+		if !granted[s] {
+			return false
+		}
+	}
+	return true
 }
 
 func LoadToken(path string) (*Token, error) {
