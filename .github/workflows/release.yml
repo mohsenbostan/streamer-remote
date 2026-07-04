@@ -1,0 +1,32 @@
+name: Release
+
+# Tag a commit with e.g. "v1.2.0" and push the tag to build and publish a
+# Windows binary. The app's built-in updater looks for exactly this asset
+# name attached to the latest GitHub Release (see internal/update).
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go vet ./...
+      - run: go test ./...
+
+      - name: Build
+        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o streamer-remote-windows-amd64.exe ./cmd/streamerctl
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create ${{ github.ref_name }} streamer-remote-windows-amd64.exe --title ${{ github.ref_name }} --generate-notes

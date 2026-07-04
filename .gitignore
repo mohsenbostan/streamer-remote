@@ -1,0 +1,9 @@
+# build output
+*.exe
+*.exe.new
+*.exe.old
+
+# runtime state, never commit secrets or machine-local files
+config.yaml
+twitch_token.json
+logs/
