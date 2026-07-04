@@ -53,6 +53,8 @@ type Config struct {
 	Prefix      string `yaml:"prefix" json:"prefix"`
 	ModOnlyMode bool   `yaml:"modOnlyMode" json:"modOnlyMode"`
 
+	TextToSpeechEnabled bool `yaml:"textToSpeechEnabled" json:"textToSpeechEnabled"`
+
 	GlobalCooldownMs  int `yaml:"globalCooldownMs" json:"globalCooldownMs"`
 	PerUserCooldownMs int `yaml:"perUserCooldownMs" json:"perUserCooldownMs"`
 
@@ -81,6 +83,8 @@ prefix: "rc!"              # viewers trigger commands with e.g. rc!w or rc!w+shi
                           # kept unusual on purpose so it won't collide with Nightbot/StreamElements/Moobot commands
 
 modOnlyMode: false        # when true, only moderators/broadcaster can send commands
+
+textToSpeechEnabled: true # when true, chat messages starting with rc-say: are spoken aloud
 
 globalCooldownMs: 150     # minimum time between any two accepted commands
 perUserCooldownMs: 1500   # minimum time between commands from the same viewer
@@ -120,7 +124,11 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
+	textToSpeechConfigured := yamlHasTopLevelKey(data, "textToSpeechEnabled")
 	cfg.applyDefaults()
+	if !textToSpeechConfigured {
+		cfg.TextToSpeechEnabled = true
+	}
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("config: invalid %s: %w", path, err)
 	}
@@ -319,6 +327,18 @@ func yamlSetMapInt(mapNode *yaml.Node, key string, value int) {
 
 func yamlScalar(value string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Value: value}
+}
+
+func yamlHasTopLevelKey(data []byte, key string) bool {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) == 0 {
+		return false
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return false
+	}
+	return yamlMapValue(root, key) != nil
 }
 
 func (c *Config) validate() error {

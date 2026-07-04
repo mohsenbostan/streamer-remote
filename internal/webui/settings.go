@@ -10,32 +10,34 @@ import (
 // edits directly (Twitch fields and reward actions have their own tabs
 // and endpoints, since they involve external Twitch API calls).
 type Settings struct {
-	Prefix            string           `json:"prefix"`
-	ModOnlyMode       bool             `json:"modOnlyMode"`
-	GlobalCooldownMs  int              `json:"globalCooldownMs"`
-	PerUserCooldownMs int              `json:"perUserCooldownMs"`
-	MaxComboSize      int              `json:"maxComboSize"`
-	MaxSequenceSteps  int              `json:"maxSequenceSteps"`
-	TapHoldMs         int              `json:"tapHoldMs"`
-	MaxHoldMs         int              `json:"maxHoldMs"`
-	MaxMoveStep       int              `json:"maxMoveStep"`
-	LogDebug          bool             `json:"logDebug"`
-	Blacklist         config.Blacklist `json:"blacklist"`
+	Prefix              string           `json:"prefix"`
+	ModOnlyMode         bool             `json:"modOnlyMode"`
+	TextToSpeechEnabled bool             `json:"textToSpeechEnabled"`
+	GlobalCooldownMs    int              `json:"globalCooldownMs"`
+	PerUserCooldownMs   int              `json:"perUserCooldownMs"`
+	MaxComboSize        int              `json:"maxComboSize"`
+	MaxSequenceSteps    int              `json:"maxSequenceSteps"`
+	TapHoldMs           int              `json:"tapHoldMs"`
+	MaxHoldMs           int              `json:"maxHoldMs"`
+	MaxMoveStep         int              `json:"maxMoveStep"`
+	LogDebug            bool             `json:"logDebug"`
+	Blacklist           config.Blacklist `json:"blacklist"`
 }
 
 func settingsFromConfig(cfg *config.Config) Settings {
 	return Settings{
-		Prefix:            cfg.Prefix,
-		ModOnlyMode:       cfg.ModOnlyMode,
-		GlobalCooldownMs:  cfg.GlobalCooldownMs,
-		PerUserCooldownMs: cfg.PerUserCooldownMs,
-		MaxComboSize:      cfg.MaxComboSize,
-		MaxSequenceSteps:  cfg.MaxSequenceSteps,
-		TapHoldMs:         cfg.TapHoldMs,
-		MaxHoldMs:         cfg.MaxHoldMs,
-		MaxMoveStep:       cfg.MaxMoveStep,
-		LogDebug:          cfg.LogDebug,
-		Blacklist:         cfg.Blacklist,
+		Prefix:              cfg.Prefix,
+		ModOnlyMode:         cfg.ModOnlyMode,
+		TextToSpeechEnabled: cfg.TextToSpeechEnabled,
+		GlobalCooldownMs:    cfg.GlobalCooldownMs,
+		PerUserCooldownMs:   cfg.PerUserCooldownMs,
+		MaxComboSize:        cfg.MaxComboSize,
+		MaxSequenceSteps:    cfg.MaxSequenceSteps,
+		TapHoldMs:           cfg.TapHoldMs,
+		MaxHoldMs:           cfg.MaxHoldMs,
+		MaxMoveStep:         cfg.MaxMoveStep,
+		LogDebug:            cfg.LogDebug,
+		Blacklist:           cfg.Blacklist,
 	}
 }
 
@@ -54,6 +56,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	next := *current // shallow copy: Twitch/RewardActions fields carry over unchanged
 	next.Prefix = in.Prefix
 	next.ModOnlyMode = in.ModOnlyMode
+	next.TextToSpeechEnabled = in.TextToSpeechEnabled
 	next.GlobalCooldownMs = in.GlobalCooldownMs
 	next.PerUserCooldownMs = in.PerUserCooldownMs
 	next.MaxComboSize = in.MaxComboSize

@@ -19,12 +19,13 @@ func testServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := &config.Config{
-		Prefix:           "rc!",
-		MaxComboSize:     3,
-		MaxSequenceSteps: 4,
-		TapHoldMs:        40,
-		MaxHoldMs:        3000,
-		MaxMoveStep:      300,
+		Prefix:              "rc!",
+		TextToSpeechEnabled: true,
+		MaxComboSize:        3,
+		MaxSequenceSteps:    4,
+		TapHoldMs:           40,
+		MaxHoldMs:           3000,
+		MaxMoveStep:         300,
 	}
 	if err := cfg.Save(path); err != nil {
 		t.Fatal(err)
@@ -111,6 +112,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 	settings.Prefix = "!!"
 	settings.ModOnlyMode = true
+	settings.TextToSpeechEnabled = false
 	settings.Blacklist.DeniedKeys = []string{"lwin"}
 
 	putResp := doJSON(t, ts, http.MethodPut, "/api/settings", settings)
@@ -119,7 +121,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatalf("expected 204, got %d", putResp.StatusCode)
 	}
 
-	if got := srv.dispatcher.Config(); got.Prefix != "!!" || !got.ModOnlyMode {
+	if got := srv.dispatcher.Config(); got.Prefix != "!!" || !got.ModOnlyMode || got.TextToSpeechEnabled {
 		t.Fatalf("expected live config to reflect the update, got %+v", got)
 	}
 
@@ -127,7 +129,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reloaded.Prefix != "!!" || len(reloaded.Blacklist.DeniedKeys) != 1 {
+	if reloaded.Prefix != "!!" || reloaded.TextToSpeechEnabled || len(reloaded.Blacklist.DeniedKeys) != 1 {
 		t.Fatalf("expected settings to persist to disk, got %+v", reloaded)
 	}
 }

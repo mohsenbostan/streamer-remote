@@ -180,6 +180,18 @@ export function SettingsTab({
           </div>
           <div className="flex items-center justify-between rounded-lg border px-4 py-3">
             <div>
+              <p className="text-sm font-medium">Text to speech</p>
+              <p className="text-xs text-muted-foreground">
+                Speak chat messages that start with rc-say:
+              </p>
+            </div>
+            <Switch
+              checked={settings.textToSpeechEnabled}
+              onCheckedChange={(v) => set("textToSpeechEnabled", v)}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+            <div>
               <p className="text-sm font-medium">Verbose logging</p>
               <p className="text-xs text-muted-foreground">
                 Show every rejected/dropped command in the live monitor and log file

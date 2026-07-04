@@ -11,6 +11,7 @@ import (
 	"streamer-remote/internal/backoff"
 	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitch"
 	"streamer-remote/internal/twitchauth"
 )
@@ -19,6 +20,7 @@ const (
 	chatQueueSize       = 64
 	redemptionQueueSize = 32
 	executorQueue       = 32
+	textToSpeechQueue   = 8
 
 	// TokenCachePath is shared with the dashboard, which needs its own
 	// Authenticator to manage Channel Points rewards independently of
@@ -87,9 +89,11 @@ func StartTwitch(parentCtx context.Context, cfg *config.Config, logger *slog.Log
 
 	chatEvents := make(chan twitch.ChatEvent, chatQueueSize)
 	redemptionEvents := make(chan twitch.RedemptionEvent, redemptionQueueSize)
+	speaker := tts.NewPlayer(logger, textToSpeechQueue)
 	go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents, redemptionEvents) })
+	go supervise(ctx, logger, "text-to-speech", speaker.Run)
 	go supervise(ctx, logger, "twitch-chat-forwarder", func(ctx context.Context) {
-		forwardTwitchEvents(ctx, chatEvents, dispatcher)
+		forwardTwitchEvents(ctx, chatEvents, dispatcher, speaker)
 	})
 	go supervise(ctx, logger, "twitch-redemption-forwarder", func(ctx context.Context) {
 		forwardRedemptions(ctx, logger, redemptionEvents, dispatcher, client, cfg.Twitch.ClientID, tokenProvider)
@@ -103,12 +107,18 @@ func (s *TwitchSession) Stop() {
 	s.cancel()
 }
 
-func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher) {
+func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher, speaker *tts.Player) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case e := <-events:
+			if text, ok := tts.Message(e.Text); ok {
+				if dispatcher.Config().TextToSpeechEnabled {
+					speaker.Say(text)
+				}
+				continue
+			}
 			dispatcher.Handle(commands.ChatMessage{
 				Username:   e.ChatterLogin,
 				Permission: commands.PermissionFromBadges(e.Badges),

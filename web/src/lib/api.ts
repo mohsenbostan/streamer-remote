@@ -15,6 +15,7 @@ export interface Blacklist {
 export interface Settings {
   prefix: string
   modOnlyMode: boolean
+  textToSpeechEnabled: boolean
   globalCooldownMs: number
   perUserCooldownMs: number
   maxComboSize: number

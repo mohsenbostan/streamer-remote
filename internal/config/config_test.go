@@ -24,6 +24,9 @@ func TestLoadCreatesDefaultOnFirstRun(t *testing.T) {
 	if cfg.Prefix != "rc!" {
 		t.Fatalf("expected default prefix 'rc!', got %q", cfg.Prefix)
 	}
+	if !cfg.TextToSpeechEnabled {
+		t.Fatal("expected text-to-speech to be enabled by default")
+	}
 }
 
 func TestTwitchValidateRequiresFields(t *testing.T) {
@@ -163,6 +166,9 @@ func TestLoadFillsDefaultsForFieldsMissingFromOldConfig(t *testing.T) {
 	}
 	if cfg.MaxSequenceSteps != 6 {
 		t.Fatalf("expected missing maxSequenceSteps to default to 6, got %d", cfg.MaxSequenceSteps)
+	}
+	if !cfg.TextToSpeechEnabled {
+		t.Fatal("expected missing textToSpeechEnabled to default to true")
 	}
 	// Everything else in the old file must survive untouched.
 	if cfg.Twitch.Channel != "mystreamer" || cfg.MaxComboSize != 3 {
