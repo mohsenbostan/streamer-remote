@@ -32,8 +32,9 @@ func DefaultOptions() Options {
 }
 
 // New builds the process-wide logger and returns it alongside the file
-// sink so callers can flush/close it on shutdown.
-func New(opts Options) (*slog.Logger, io.Closer) {
+// sink so callers can flush/close it on shutdown. extra handlers (e.g. the
+// dashboard's SSE tap) receive every record alongside the file and console.
+func New(opts Options, extra ...slog.Handler) (*slog.Logger, io.Closer) {
 	level := slog.LevelInfo
 	if opts.Debug {
 		level = slog.LevelDebug
@@ -50,7 +51,8 @@ func New(opts Options) (*slog.Logger, io.Closer) {
 	fileHandler := slog.NewJSONHandler(fileSink, &slog.HandlerOptions{Level: level})
 	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
 
-	logger := slog.New(&multiHandler{handlers: []slog.Handler{fileHandler, consoleHandler}})
+	handlers := append([]slog.Handler{fileHandler, consoleHandler}, extra...)
+	logger := slog.New(&multiHandler{handlers: handlers})
 	return logger, fileSink
 }
 

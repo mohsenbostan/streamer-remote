@@ -11,8 +11,8 @@ import (
 )
 
 type Twitch struct {
-	Channel  string `yaml:"channel"`
-	ClientID string `yaml:"clientId"`
+	Channel  string `yaml:"channel" json:"channel"`
+	ClientID string `yaml:"clientId" json:"clientId"`
 }
 
 // Validate checks the fields required to actually connect to Twitch. It is
@@ -30,8 +30,8 @@ func (t Twitch) Validate() error {
 // Blacklist holds streamer-added restrictions on top of the hardcoded base
 // denylist in the commands package (which can never be relaxed via config).
 type Blacklist struct {
-	DeniedKeys   []string   `yaml:"deniedKeys"`
-	DeniedCombos [][]string `yaml:"deniedCombos"`
+	DeniedKeys   []string   `yaml:"deniedKeys" json:"deniedKeys"`
+	DeniedCombos [][]string `yaml:"deniedCombos" json:"deniedCombos"`
 }
 
 // RewardAction gates one action (same syntax as a chat combo body, e.g.
@@ -41,30 +41,30 @@ type Blacklist struct {
 // reward on Twitch; streamers manage these through the app's menu rather
 // than hand-editing this section.
 type RewardAction struct {
-	Action      string `yaml:"action"`
-	RewardTitle string `yaml:"rewardTitle"`
-	Cost        int    `yaml:"cost"`
-	RewardID    string `yaml:"rewardId"`
+	Action      string `yaml:"action" json:"action"`
+	RewardTitle string `yaml:"rewardTitle" json:"rewardTitle"`
+	Cost        int    `yaml:"cost" json:"cost"`
+	RewardID    string `yaml:"rewardId" json:"rewardId"`
 }
 
 type Config struct {
-	Twitch Twitch `yaml:"twitch"`
+	Twitch Twitch `yaml:"twitch" json:"twitch"`
 
-	Prefix      string `yaml:"prefix"`
-	ModOnlyMode bool   `yaml:"modOnlyMode"`
+	Prefix      string `yaml:"prefix" json:"prefix"`
+	ModOnlyMode bool   `yaml:"modOnlyMode" json:"modOnlyMode"`
 
-	GlobalCooldownMs  int `yaml:"globalCooldownMs"`
-	PerUserCooldownMs int `yaml:"perUserCooldownMs"`
+	GlobalCooldownMs  int `yaml:"globalCooldownMs" json:"globalCooldownMs"`
+	PerUserCooldownMs int `yaml:"perUserCooldownMs" json:"perUserCooldownMs"`
 
-	MaxComboSize int `yaml:"maxComboSize"`
-	TapHoldMs    int `yaml:"tapHoldMs"`
-	MaxHoldMs    int `yaml:"maxHoldMs"`
-	MaxMoveStep  int `yaml:"maxMoveStep"`
+	MaxComboSize int `yaml:"maxComboSize" json:"maxComboSize"`
+	TapHoldMs    int `yaml:"tapHoldMs" json:"tapHoldMs"`
+	MaxHoldMs    int `yaml:"maxHoldMs" json:"maxHoldMs"`
+	MaxMoveStep  int `yaml:"maxMoveStep" json:"maxMoveStep"`
 
-	Blacklist     Blacklist      `yaml:"blacklist"`
-	RewardActions []RewardAction `yaml:"rewardActions"`
+	Blacklist     Blacklist      `yaml:"blacklist" json:"blacklist"`
+	RewardActions []RewardAction `yaml:"rewardActions" json:"rewardActions"`
 
-	LogDebug bool `yaml:"logDebug"`
+	LogDebug bool `yaml:"logDebug" json:"logDebug"`
 }
 
 const defaultConfigTemplate = `# streamer-remote configuration.
@@ -94,7 +94,7 @@ blacklist:
   deniedCombos: []        # extra key combos to block, e.g. [["ctrl", "w"]]
 
 rewardActions: []         # actions only redeemable via Channel Points, never by typing in chat
-                          # managed from the app's menu ("Manage channel-points-only actions"), not by hand
+                          # managed from the dashboard's Rewards tab, not by hand
 
 logDebug: false           # verbose logging for troubleshooting
 `
@@ -122,6 +122,25 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: invalid %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// Save validates and writes the full config back to path. Used by the
+// dashboard's Settings tab, which edits the in-memory Config wholesale;
+// unlike UpdateTwitchFields/AddRewardAction/RemoveRewardAction, this does
+// not preserve comments, since once a streamer is using the dashboard to
+// manage settings there's no hand-written YAML left to protect.
+func (c *Config) Save(path string) error {
+	if err := c.validate(); err != nil {
+		return fmt.Errorf("config: invalid settings: %w", err)
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("config: encode: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("config: write %s: %w", path, err)
+	}
+	return nil
 }
 
 // ErrDefaultCreated signals that no config existed and a template was

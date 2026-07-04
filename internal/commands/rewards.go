@@ -85,7 +85,8 @@ func buildGatedActions(cfg *config.Config, logger *slog.Logger) (bySignature, by
 // and paused state still apply, since those are hard safety floors rather
 // than trust levels.
 func (d *Dispatcher) HandleRedemption(rewardID, redeemerUsername string) RedemptionResult {
-	ga, ok := d.gatedByRewardID[rewardID]
+	snap := d.snap.Load()
+	ga, ok := snap.gatedByRewardID[rewardID]
 	if !ok {
 		return RedemptionIgnored
 	}
@@ -94,12 +95,12 @@ func (d *Dispatcher) HandleRedemption(rewardID, redeemerUsername string) Redempt
 		d.logger.Info("refunding redemption: remote is paused", "user", redeemerUsername, "reward", ga.rewardTitle)
 		return RedemptionRefunded
 	}
-	if reason := d.blacklist.Check(ga.actions); reason != "" {
+	if reason := snap.blacklist.Check(ga.actions); reason != "" {
 		d.logger.Warn("refunding redemption: action is blacklisted", "user", redeemerUsername, "reward", ga.rewardTitle, "reason", reason)
 		return RedemptionRefunded
 	}
 
-	hold := EffectiveHoldMs(ga.actions, d.cfg.TapHoldMs)
+	hold := EffectiveHoldMs(ga.actions, snap.cfg.TapHoldMs)
 	d.executor.Submit(ga.actions, hold)
 	d.logger.Info("redeemed", "user", redeemerUsername, "reward", ga.rewardTitle)
 	return RedemptionFulfilled

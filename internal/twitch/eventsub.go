@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -45,6 +46,8 @@ type Client struct {
 	mu                sync.Mutex
 	broadcasterUserID string
 	ownUserID         string
+
+	connected atomic.Bool
 }
 
 // BroadcasterUserID returns the resolved channel ID, or "" before the
@@ -55,6 +58,13 @@ func (c *Client) BroadcasterUserID() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.broadcasterUserID
+}
+
+// Connected reports whether the WebSocket session is currently live and
+// subscribed (i.e. actually receiving chat/redemption events, not just
+// attempting to reconnect).
+func (c *Client) Connected() bool {
+	return c.connected.Load()
 }
 
 // Run connects to EventSub and streams chat messages and Channel Points
@@ -129,6 +139,7 @@ func (c *Client) runSession(ctx context.Context, chatOut chan<- ChatEvent, redem
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer conn.CloseNow()
+	defer c.connected.Store(false)
 
 	keepalive := 15 * time.Second
 
@@ -177,6 +188,7 @@ func (c *Client) runSession(ctx context.Context, chatOut chan<- ChatEvent, redem
 			if err := helix.CreateRedemptionSubscription(ctx, c.broadcasterUserID, p.Session.ID); err != nil {
 				return fmt.Errorf("create redemption subscription: %w", err)
 			}
+			c.connected.Store(true)
 			c.Logger.Info("connected to twitch chat", "channel", c.Channel)
 
 		case "session_keepalive":

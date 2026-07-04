@@ -212,3 +212,26 @@ func TestDispatcherCooldownCleanupRemovesStaleUsers(t *testing.T) {
 		t.Fatal("expected stale user to be pruned")
 	}
 }
+
+// TestUpdateConfigConcurrentWithHandle guards against the data race that
+// would exist if Dispatcher read individual *config.Config fields directly
+// while the dashboard's Settings tab could swap the config out from under
+// it mid-message. Run with -race to actually catch a regression here.
+func TestUpdateConfigConcurrentWithHandle(t *testing.T) {
+	d, _ := testDispatcher(testConfig())
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			cfg := testConfig()
+			cfg.MaxComboSize = 1 + i%5
+			d.UpdateConfig(cfg)
+		}
+	}()
+
+	for i := 0; i < 200; i++ {
+		d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!w"})
+	}
+	<-done
+}

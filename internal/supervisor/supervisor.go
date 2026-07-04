@@ -4,10 +4,8 @@
 package supervisor
 
 import (
-	"bufio"
 	"context"
 	"log/slog"
-	"os"
 	"time"
 
 	"streamer-remote/internal/backoff"
@@ -22,9 +20,9 @@ const (
 	redemptionQueueSize = 32
 	executorQueue       = 32
 
-	// TokenCachePath is also used by the interactive setup wizard (main
-	// package) when it needs a Helix client to manage Channel Points
-	// rewards outside of a running supervisor session.
+	// TokenCachePath is shared with the dashboard, which needs its own
+	// Authenticator to manage Channel Points rewards independently of
+	// whether the Twitch subsystem is currently running.
 	TokenCachePath = "twitch_token.json"
 )
 
@@ -37,72 +35,72 @@ var TwitchAuthScopes = []string{
 	"channel:manage:redemptions",
 }
 
-type Options struct {
-	Config    *config.Config
-	Logger    *slog.Logger
-	LocalOnly bool
-
-	// Console is the shared stdin reader. Optional: if nil, a fresh one
-	// over os.Stdin is created. Callers that already read stdin themselves
-	// (e.g. an interactive setup wizard) must pass that same reader so the
-	// two don't race over the same file descriptor.
-	Console *bufio.Reader
+// Core holds the subsystems that always run, regardless of whether Twitch
+// is connected: the input executor and the dispatcher that gates chat/
+// redemption/dashboard-originated commands. It's the shared foundation
+// the web dashboard's "quick test" and the Twitch pipeline both feed into.
+type Core struct {
+	Dispatcher *commands.Dispatcher
+	executor   *commands.Executor
 }
 
-// Run blocks until ctx is cancelled, running every enabled subsystem.
-func Run(ctx context.Context, opts Options) error {
-	cfg, logger := opts.Config, opts.Logger
-	console := opts.Console
-	if console == nil {
-		console = bufio.NewReader(os.Stdin)
-	}
-
+// NewCore builds and starts the always-on subsystems.
+func NewCore(ctx context.Context, cfg *config.Config, logger *slog.Logger) *Core {
 	executor := commands.NewExecutor(logger, executorQueue)
 	dispatcher := commands.NewDispatcher(cfg, logger, executor)
 
 	go supervise(ctx, logger, "executor", func(ctx context.Context) { executor.Run(ctx) })
 	go supervise(ctx, logger, "cooldown-cleanup", dispatcher.RunCooldownCleanup)
-	go supervise(ctx, logger, "local-console", func(ctx context.Context) { runLocalConsole(ctx, logger, dispatcher, console) })
 
-	if !opts.LocalOnly {
-		if err := cfg.Twitch.Validate(); err != nil {
-			return err
-		}
+	return &Core{Dispatcher: dispatcher, executor: executor}
+}
 
-		auth := twitchauth.New(cfg.Twitch.ClientID, TokenCachePath, TwitchAuthScopes, logger)
-		if _, err := auth.EnsureToken(ctx); err != nil {
-			return err
-		}
-		tokenProvider := func(ctx context.Context) (string, error) {
-			tok, err := auth.EnsureToken(ctx)
-			if err != nil {
-				return "", err
-			}
-			return tok.AccessToken, nil
-		}
+// TwitchSession is a running Twitch connection, startable and stoppable
+// independently of Core so the dashboard can connect Twitch on demand
+// (after the streamer finishes setup) without restarting the app.
+type TwitchSession struct {
+	Client *twitch.Client
+	cancel context.CancelFunc
+}
 
-		client := &twitch.Client{
-			ClientID:      cfg.Twitch.ClientID,
-			Channel:       cfg.Twitch.Channel,
-			Logger:        logger,
-			TokenProvider: tokenProvider,
-		}
+// StartTwitch begins streaming chat and Channel Points redemptions into
+// dispatcher. Call Stop when done. The caller is responsible for having
+// already ensured a usable token exists (see twitchauth.Authenticator) —
+// this does not itself run interactive auth.
+func StartTwitch(parentCtx context.Context, cfg *config.Config, logger *slog.Logger, dispatcher *commands.Dispatcher, auth *twitchauth.Authenticator) *TwitchSession {
+	ctx, cancel := context.WithCancel(parentCtx)
 
-		chatEvents := make(chan twitch.ChatEvent, chatQueueSize)
-		redemptionEvents := make(chan twitch.RedemptionEvent, redemptionQueueSize)
-		go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents, redemptionEvents) })
-		go supervise(ctx, logger, "twitch-chat-forwarder", func(ctx context.Context) {
-			forwardTwitchEvents(ctx, chatEvents, dispatcher)
-		})
-		go supervise(ctx, logger, "twitch-redemption-forwarder", func(ctx context.Context) {
-			forwardRedemptions(ctx, logger, redemptionEvents, dispatcher, client, cfg.Twitch.ClientID, tokenProvider)
-		})
-	} else {
-		logger.Info("running in local-only mode: no Twitch connection will be made")
+	tokenProvider := func(ctx context.Context) (string, error) {
+		tok, err := auth.EnsureToken(ctx)
+		if err != nil {
+			return "", err
+		}
+		return tok.AccessToken, nil
 	}
 
-	<-ctx.Done()
-	return nil
+	client := &twitch.Client{
+		ClientID:      cfg.Twitch.ClientID,
+		Channel:       cfg.Twitch.Channel,
+		Logger:        logger,
+		TokenProvider: tokenProvider,
+	}
+
+	chatEvents := make(chan twitch.ChatEvent, chatQueueSize)
+	redemptionEvents := make(chan twitch.RedemptionEvent, redemptionQueueSize)
+	go supervise(ctx, logger, "twitch-eventsub", func(ctx context.Context) { client.Run(ctx, chatEvents, redemptionEvents) })
+	go supervise(ctx, logger, "twitch-chat-forwarder", func(ctx context.Context) {
+		forwardTwitchEvents(ctx, chatEvents, dispatcher)
+	})
+	go supervise(ctx, logger, "twitch-redemption-forwarder", func(ctx context.Context) {
+		forwardRedemptions(ctx, logger, redemptionEvents, dispatcher, client, cfg.Twitch.ClientID, tokenProvider)
+	})
+
+	return &TwitchSession{Client: client, cancel: cancel}
+}
+
+// Stop disconnects the Twitch session. Safe to call once.
+func (s *TwitchSession) Stop() {
+	s.cancel()
 }
 
 func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher) {

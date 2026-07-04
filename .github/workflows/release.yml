@@ -20,11 +20,26 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build dashboard frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
       - run: go vet ./...
-      - run: go test ./...
+      - run: go test ./... -race
 
       - name: Build
-        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o streamer-remote-windows-amd64.exe ./cmd/streamerctl
+        # -H=windowsgui: no console window. The dashboard + tray icon are
+        # the whole UI; a flashing terminal would just be visual noise for
+        # a non-technical streamer.
+        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }} -H=windowsgui" -o streamer-remote-windows-amd64.exe ./cmd/streamerctl
 
       - name: Publish release
         env:

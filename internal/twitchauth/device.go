@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"streamer-remote/internal/browser"
 )
 
 const (
@@ -23,6 +21,11 @@ type Authenticator struct {
 	Scopes    []string
 	TokenPath string
 	Logger    *slog.Logger
+
+	// OnCode, if set, is called once a device code is obtained, before
+	// polling begins. The caller decides what to do with it — print it,
+	// open a browser, surface it over an API for a web dashboard to show.
+	OnCode func(verificationURI, userCode string)
 
 	httpClient *http.Client
 }
@@ -98,9 +101,8 @@ func (a *Authenticator) deviceLogin(ctx context.Context) (*Token, error) {
 
 	a.Logger.Info("Twitch authorization required",
 		"open", dc.VerificationURI, "enter_code", dc.UserCode)
-	fmt.Printf("\n>>> Opening your browser. If it doesn't open, go to %s and enter code: %s\n\n", dc.VerificationURI, dc.UserCode)
-	if err := browser.Open(dc.VerificationURI); err != nil {
-		a.Logger.Debug("could not auto-open browser", "error", err)
+	if a.OnCode != nil {
+		a.OnCode(dc.VerificationURI, dc.UserCode)
 	}
 
 	interval := time.Duration(dc.Interval) * time.Second
