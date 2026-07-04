@@ -120,10 +120,39 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
+	cfg.applyDefaults()
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("config: invalid %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// applyDefaults fills in fields that are absent from an older config.yaml
+// (and so unmarshal to their zero value) but aren't allowed to be zero.
+// Without this, every field added to Config after its first release would
+// need every existing install's config.yaml hand-edited before the app
+// could start again — exactly the kind of upgrade breakage this guards
+// against. Fields where zero is a legitimate value (the cooldowns) are
+// deliberately left alone.
+func (c *Config) applyDefaults() {
+	if strings.TrimSpace(c.Prefix) == "" {
+		c.Prefix = "rc!"
+	}
+	if c.MaxComboSize == 0 {
+		c.MaxComboSize = 3
+	}
+	if c.MaxSequenceSteps == 0 {
+		c.MaxSequenceSteps = 6
+	}
+	if c.TapHoldMs == 0 {
+		c.TapHoldMs = 40
+	}
+	if c.MaxHoldMs == 0 {
+		c.MaxHoldMs = 3000
+	}
+	if c.MaxMoveStep == 0 {
+		c.MaxMoveStep = 300
+	}
 }
 
 // Save validates and writes the full config back to path. Used by the

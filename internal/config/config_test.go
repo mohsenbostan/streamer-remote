@@ -139,6 +139,37 @@ func TestAddAndRemoveRewardAction(t *testing.T) {
 	}
 }
 
+// TestLoadFillsDefaultsForFieldsMissingFromOldConfig reproduces the exact
+// bug reported after v1.2.0 shipped maxSequenceSteps: a config.yaml
+// written by an older release has no such key, so it unmarshals to 0 —
+// and validate() rejected 0 outright, crashing the app on startup for
+// every existing install. Load must fill in a working default instead.
+func TestLoadFillsDefaultsForFieldsMissingFromOldConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	oldFormat := "twitch:\n  channel: \"mystreamer\"\n  clientId: \"abc123\"\n" +
+		"prefix: \"rc!\"\n" +
+		"maxComboSize: 3\n" +
+		"tapHoldMs: 40\n" +
+		"maxHoldMs: 3000\n" +
+		"maxMoveStep: 300\n"
+	// Deliberately no maxSequenceSteps key, simulating a pre-v1.2.0 file.
+	if err := os.WriteFile(path, []byte(oldFormat), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected an old config missing a newer field to still load, got: %v", err)
+	}
+	if cfg.MaxSequenceSteps != 6 {
+		t.Fatalf("expected missing maxSequenceSteps to default to 6, got %d", cfg.MaxSequenceSteps)
+	}
+	// Everything else in the old file must survive untouched.
+	if cfg.Twitch.Channel != "mystreamer" || cfg.MaxComboSize != 3 {
+		t.Fatalf("expected existing fields to be preserved, got %+v", cfg)
+	}
+}
+
 func TestValidateRejectsBadLimits(t *testing.T) {
 	cfg := &Config{
 		Prefix:           "rc!",
