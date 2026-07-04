@@ -49,10 +49,30 @@ blacklist. The quick test box works in normal (Twitch-connected) mode too.
 - `rc!w` — tap the W key
 - `rc!w+shift` — combo: hold both, then release (viewers can chain up to `maxComboSize` tokens with `+`)
 - `rc!click:left` / `click:right` / `click:middle` — mouse click
-- `rc!move:up:50` — move the mouse 50px (direction required, amount optional, capped by `maxMoveStep`)
+- `rc!move:up:50` — move the mouse 50px in one named direction (amount optional, capped by `maxMoveStep`)
+- `rc!move:50:-30` — or move on both axes at once: dx,dy in pixels (right 50, up 30)
 - `rc!scroll:up` / `scroll:down` — mouse wheel
 - `rc!hold:w:1000` — hold a key for an explicit duration in ms (capped by `maxHoldMs`)
+- `rc!alt+f10,wait:800,enter` — a sequence: comma-separated steps run in order, each either a combo
+  or a `wait:<ms>` pause, e.g. open a menu, give it time to animate in, then confirm (steps capped
+  by `maxSequenceSteps`, wait duration capped by `maxHoldMs`)
 - `rc!pause` / `rc!resume` — moderator/broadcaster only; kills or restores the remote instantly (same as the dashboard's Active/Paused switch)
+
+`+` and `,` mean different things — don't mix them up. `+` holds keys down
+*together* (a combo, like `ctrl+shift+w`); `,` taps steps *one after
+another* (a sequence). To type a game console command like `quit` you want
+taps, not a combo: `` rc!`,q,u,i,t,enter `` (backtick opens the console,
+then each letter, then enter) — `` rc!`+q+u+i+t+enter `` would instead try
+to hold all six keys down at once, which isn't what any game expects.
+`` ` `` also has the friendly aliases `grave`, `tilde`, `backtick`, and
+`console`, if backtick is awkward to type in chat.
+
+Beyond letters, numbers, and named keys (arrows, function keys, `space`,
+`enter`, `esc`, modifiers, `home`/`end`/`pageup`/etc.), punctuation keys
+are supported too: `` ` ``/`grave`/`tilde`/`console`, `-`/`minus`, `=`/`equals`,
+`[`/`leftbracket`, `]`/`rightbracket`, `\`/`backslash`, `;`/`semicolon`,
+`'`/`quote`, `.`/`period`, `/`/`slash`, and `comma` (no bare `,` key name,
+since that's the sequence separator).
 
 The `rc!` prefix is deliberately unusual so it won't collide with
 Nightbot/StreamElements/Moobot-style single-`!` bot commands. Change it in
@@ -100,12 +120,23 @@ run `streamer-remote.exe --update` for a non-interactive update-and-exit
 relaunches itself. `config.yaml` and your saved Twitch login are never
 touched by an update.
 
-### Cutting a release (maintainers)
+### Releasing (maintainers)
 
-Push a tag matching `v*.*.*` (e.g. `git tag v1.1.0 && git push origin
-v1.1.0`). `.github/workflows/release.yml` builds the frontend, then the
+Releases are fully automatic — just push Conventional Commits to `main`:
+
+- `fix: ...` → patch release
+- `feat: ...` → minor release
+- `feat!: ...` / a `BREAKING CHANGE:` footer → major release
+- anything else (`chore:`, `docs:`, `refactor:`, non-conventional messages) → no release
+
+`.github/workflows/ci.yml` runs on every push (frontend build, vet,
+race-tested tests, build). `.github/workflows/release.yml` only starts
+*after* CI succeeds on `main` (via `workflow_run`) — it never re-runs
+CI's checks, it just scans commit messages since the last tag for the
+highest applicable bump, and if there is one, tags it, builds the
 Windows binary with the version baked in, and publishes it as a GitHub
-Release named after the tag, with the exe attached as
-`streamer-remote-windows-amd64.exe` — the exact name the in-app updater
-looks for. Every push also runs `.github/workflows/ci.yml` (frontend
-build, vet, race-tested tests, build).
+Release with the exe attached as `streamer-remote-windows-amd64.exe` —
+the exact name the in-app updater looks for. No release-worthy commits
+since the last tag means the workflow just exits without publishing
+anything. It can also be triggered manually (Actions tab → Release →
+Run workflow) to force a check without waiting for a new push.

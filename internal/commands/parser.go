@@ -26,6 +26,45 @@ func TrimPrefix(text, prefix string) (string, bool) {
 	return strings.TrimSpace(strings.TrimPrefix(text, prefix)), true
 }
 
+// ParseSequence splits a command body on ',' into an ordered list of
+// Steps, each either a combo (parsed by ParseCombo) or a "wait:<ms>"
+// pure delay — e.g. "alt+f10,wait:800,enter" opens a menu, gives it time
+// to animate in, then confirms. A single combo with no ',' is just a
+// one-step sequence.
+func ParseSequence(body string, cfg *config.Config) ([]Step, error) {
+	rawSteps := strings.Split(body, ",")
+	if len(rawSteps) > cfg.MaxSequenceSteps {
+		return nil, fmt.Errorf("sequence too long: %d steps, max is %d", len(rawSteps), cfg.MaxSequenceSteps)
+	}
+
+	steps := make([]Step, 0, len(rawSteps))
+	for _, raw := range rawSteps {
+		raw = strings.TrimSpace(strings.ToLower(raw))
+		if raw == "" {
+			return nil, fmt.Errorf("empty step in sequence")
+		}
+
+		if ms, ok := strings.CutPrefix(raw, "wait:"); ok {
+			n, err := strconv.Atoi(ms)
+			if err != nil || n <= 0 {
+				return nil, fmt.Errorf("invalid wait duration in %q", raw)
+			}
+			if n > cfg.MaxHoldMs {
+				n = cfg.MaxHoldMs
+			}
+			steps = append(steps, Step{HoldMs: n})
+			continue
+		}
+
+		actions, err := ParseCombo(raw, cfg)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, Step{Actions: actions, HoldMs: EffectiveHoldMs(actions, cfg.TapHoldMs)})
+	}
+	return steps, nil
+}
+
 // ParseCombo splits a command body on '+' into individual actions.
 func ParseCombo(body string, cfg *config.Config) ([]Action, error) {
 	tokens := strings.Split(strings.ToLower(body), "+")
@@ -63,23 +102,37 @@ func parseToken(tok string, cfg *config.Config) (Action, error) {
 
 	case "move":
 		if len(parts) < 2 {
-			return Action{}, fmt.Errorf("invalid move token %q (use move:up, move:down, move:left, or move:right)", tok)
+			return Action{}, fmt.Errorf("invalid move token %q (use move:up, move:down, move:left, move:right, or move:<dx>:<dy>)", tok)
 		}
-		if !isDirection(parts[1]) {
-			return Action{}, fmt.Errorf("invalid move direction %q", parts[1])
-		}
-		amount := int32(20)
-		if len(parts) == 3 {
-			n, err := strconv.Atoi(parts[2])
-			if err != nil || n <= 0 {
-				return Action{}, fmt.Errorf("invalid move amount in %q", tok)
+		if isDirection(parts[1]) {
+			amount := int32(20)
+			if len(parts) == 3 {
+				n, err := strconv.Atoi(parts[2])
+				if err != nil || n <= 0 {
+					return Action{}, fmt.Errorf("invalid move amount in %q", tok)
+				}
+				amount = int32(n)
 			}
-			amount = int32(n)
+			if amount > int32(cfg.MaxMoveStep) {
+				amount = int32(cfg.MaxMoveStep)
+			}
+			return Action{Kind: KindMove, Name: parts[1], Amount: amount}, nil
 		}
-		if amount > int32(cfg.MaxMoveStep) {
-			amount = int32(cfg.MaxMoveStep)
+
+		// move:<dx>:<dy> — an explicit offset on both axes in one step,
+		// e.g. move:50:-30 moves right 50px and up 30px at the same time.
+		if len(parts) != 3 {
+			return Action{}, fmt.Errorf("invalid move token %q (use move:up, move:down, move:left, move:right, or move:<dx>:<dy>)", tok)
 		}
-		return Action{Kind: KindMove, Name: parts[1], Amount: amount}, nil
+		dx, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return Action{}, fmt.Errorf("invalid move dx in %q", tok)
+		}
+		dy, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return Action{}, fmt.Errorf("invalid move dy in %q", tok)
+		}
+		return Action{Kind: KindMove, Name: "xy", Amount: clampMove(dx, cfg), Amount2: clampMove(dy, cfg)}, nil
 
 	case "scroll":
 		if len(parts) < 2 || (parts[1] != "up" && parts[1] != "down") {
@@ -122,4 +175,17 @@ func parseToken(tok string, cfg *config.Config) (Action, error) {
 
 func isDirection(s string) bool {
 	return s == "up" || s == "down" || s == "left" || s == "right"
+}
+
+// clampMove bounds a signed pixel offset to +/-cfg.MaxMoveStep.
+func clampMove(n int, cfg *config.Config) int32 {
+	max := int32(cfg.MaxMoveStep)
+	v := int32(n)
+	if v > max {
+		return max
+	}
+	if v < -max {
+		return -max
+	}
+	return v
 }

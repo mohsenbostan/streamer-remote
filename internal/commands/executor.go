@@ -8,17 +8,16 @@ import (
 	"streamer-remote/internal/input"
 )
 
-// job is a combo queued for execution.
+// job is a sequence of steps queued for execution.
 type job struct {
-	actions []Action
-	holdMs  int
+	steps []Step
 }
 
-// Executor runs combos one at a time on a dedicated goroutine. Serializing
-// is what keeps latency predictable: concurrent SendInput calls would race
-// on key ordering, and a single worker with a small bounded queue means a
-// burst of chat commands degrades by dropping the oldest overflow rather
-// than piling up growing delay.
+// Executor runs sequences one at a time on a dedicated goroutine.
+// Serializing is what keeps latency predictable: concurrent SendInput
+// calls would race on key ordering, and a single worker with a small
+// bounded queue means a burst of chat commands degrades by dropping the
+// oldest overflow rather than piling up growing delay.
 type Executor struct {
 	jobs   chan job
 	logger *slog.Logger
@@ -31,14 +30,14 @@ func NewExecutor(logger *slog.Logger, queueSize int) *Executor {
 	}
 }
 
-// Submit enqueues a combo for execution. It never blocks: if the queue is
-// full, the combo is dropped and logged rather than adding latency to
-// everything behind it.
-func (e *Executor) Submit(actions []Action, holdMs int) {
+// Submit enqueues a sequence for execution. It never blocks: if the queue
+// is full, the sequence is dropped and logged rather than adding latency
+// to everything behind it.
+func (e *Executor) Submit(steps []Step) {
 	select {
-	case e.jobs <- job{actions: actions, holdMs: holdMs}:
+	case e.jobs <- job{steps: steps}:
 	default:
-		e.logger.Warn("executor queue full, dropping combo")
+		e.logger.Warn("executor queue full, dropping sequence")
 	}
 }
 
@@ -62,13 +61,20 @@ func (e *Executor) Run(ctx context.Context) {
 func (e *Executor) runJob(j job) {
 	defer func() {
 		if r := recover(); r != nil {
-			e.logger.Error("recovered panic executing combo", "panic", r)
+			e.logger.Error("recovered panic executing sequence", "panic", r)
 		}
 	}()
 
-	hold := time.Duration(j.holdMs) * time.Millisecond
+	for _, step := range j.steps {
+		e.runStep(step)
+	}
+}
 
-	for _, a := range j.actions {
+// runStep presses every action in the step down together, holds for
+// HoldMs, then releases in reverse order. A step with no actions is a
+// pure delay: it just sleeps.
+func (e *Executor) runStep(step Step) {
+	for _, a := range step.Actions {
 		switch a.Kind {
 		case KindKey:
 			if err := input.KeyDown(a.Name); err != nil {
@@ -79,7 +85,7 @@ func (e *Executor) runJob(j job) {
 				e.logger.Error("mouse down failed", "button", a.Name, "error", err)
 			}
 		case KindMove:
-			dx, dy := directionDelta(a.Name, a.Amount)
+			dx, dy := moveDelta(a)
 			if err := input.MoveMouseRelative(dx, dy); err != nil {
 				e.logger.Error("mouse move failed", "direction", a.Name, "error", err)
 			}
@@ -94,10 +100,10 @@ func (e *Executor) runJob(j job) {
 		}
 	}
 
-	time.Sleep(hold)
+	time.Sleep(time.Duration(step.HoldMs) * time.Millisecond)
 
-	for i := len(j.actions) - 1; i >= 0; i-- {
-		a := j.actions[i]
+	for i := len(step.Actions) - 1; i >= 0; i-- {
+		a := step.Actions[i]
 		switch a.Kind {
 		case KindKey:
 			if err := input.KeyUp(a.Name); err != nil {
@@ -111,16 +117,21 @@ func (e *Executor) runJob(j job) {
 	}
 }
 
-func directionDelta(direction string, amount int32) (dx, dy int32) {
-	switch direction {
+// moveDelta resolves a KindMove action to a pixel offset: either an
+// explicit dx,dy (Name == "xy") or a named direction + magnitude.
+func moveDelta(a Action) (dx, dy int32) {
+	if a.Name == "xy" {
+		return a.Amount, a.Amount2
+	}
+	switch a.Name {
 	case "up":
-		return 0, -amount
+		return 0, -a.Amount
 	case "down":
-		return 0, amount
+		return 0, a.Amount
 	case "left":
-		return -amount, 0
+		return -a.Amount, 0
 	case "right":
-		return amount, 0
+		return a.Amount, 0
 	default:
 		return 0, 0
 	}

@@ -148,6 +148,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/twitch/setup", s.handleTwitchSetup)
 	mux.HandleFunc("POST /api/twitch/connect", s.handleTwitchConnect)
 	mux.HandleFunc("GET /api/twitch/auth", s.handleTwitchAuthState)
+	mux.HandleFunc("POST /api/twitch/logout", s.handleTwitchLogout)
 
 	mux.HandleFunc("GET /api/rewards", s.handleListRewards)
 	mux.HandleFunc("POST /api/rewards", s.handleAddReward)

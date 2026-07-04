@@ -141,11 +141,12 @@ func TestAddAndRemoveRewardAction(t *testing.T) {
 
 func TestValidateRejectsBadLimits(t *testing.T) {
 	cfg := &Config{
-		Prefix:       "rc!",
-		MaxComboSize: 99,
-		TapHoldMs:    40,
-		MaxHoldMs:    3000,
-		MaxMoveStep:  300,
+		Prefix:           "rc!",
+		MaxComboSize:     99,
+		MaxSequenceSteps: 4,
+		TapHoldMs:        40,
+		MaxHoldMs:        3000,
+		MaxMoveStep:      300,
 	}
 	if err := cfg.validate(); err == nil {
 		t.Fatal("expected error for out-of-range maxComboSize")

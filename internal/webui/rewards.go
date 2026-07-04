@@ -60,7 +60,7 @@ func (s *Server) handleAddReward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.dispatcher.Config()
-	if _, err := commands.ParseCombo(strings.ToLower(req.Action), cfg); err != nil {
+	if _, err := commands.ParseSequence(strings.ToLower(req.Action), cfg); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

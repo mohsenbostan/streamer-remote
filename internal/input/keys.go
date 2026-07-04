@@ -30,6 +30,21 @@ var vkCodes = map[string]uint16{
 
 	"lshift": 0xA0, "rshift": 0xA1, "lctrl": 0xA2, "rctrl": 0xA3,
 	"lalt": 0xA4, "ralt": 0xA5,
+
+	// OEM/punctuation keys (US keyboard layout). Several have friendly
+	// aliases since their literal glyphs are awkward to type in chat or,
+	// in the case of ",", already reserved as the sequence separator.
+	";": 0xBA, "semicolon": 0xBA,
+	"=": 0xBB, "equals": 0xBB, "plus": 0xBB,
+	"comma": 0xBC,
+	"-":     0xBD, "minus": 0xBD, "dash": 0xBD,
+	".": 0xBE, "period": 0xBE,
+	"/": 0xBF, "slash": 0xBF,
+	"`": 0xC0, "grave": 0xC0, "tilde": 0xC0, "backtick": 0xC0, "console": 0xC0,
+	"[": 0xDB, "leftbracket": 0xDB,
+	"\\": 0xDC, "backslash": 0xDC,
+	"]": 0xDD, "rightbracket": 0xDD,
+	"'": 0xDE, "quote": 0xDE, "apostrophe": 0xDE,
 }
 
 // aliasKeys lets a denylist entry of "alt" or "ctrl" also catch the

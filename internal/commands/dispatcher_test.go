@@ -235,3 +235,51 @@ func TestUpdateConfigConcurrentWithHandle(t *testing.T) {
 	}
 	<-done
 }
+
+func TestDispatcherAcceptsSequence(t *testing.T) {
+	d, ex := testDispatcher(testConfig())
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!alt+f10,wait:800,enter"})
+	if ex.QueueLen() != 1 {
+		t.Fatalf("expected the whole sequence to queue as one job, got queue=%d", ex.QueueLen())
+	}
+}
+
+func TestDispatcherRewardOnlySequenceGating(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f10,wait:800,enter", RewardTitle: "Open Menu", RewardID: "reward-1"},
+	}
+	d, ex := testDispatcher(cfg)
+
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!alt+f10,wait:800,enter"})
+	if ex.QueueLen() != 0 {
+		t.Fatal("expected the exact reward-gated sequence to be blocked for a viewer")
+	}
+
+	// A sequence with a different wait duration is a different sequence,
+	// not the same gated action — it should go through untouched.
+	d.Handle(ChatMessage{Username: "viewer1", Permission: Everyone, Text: "rc!alt+f10,wait:500,enter"})
+	if ex.QueueLen() != 1 {
+		t.Fatal("expected a sequence with a different wait duration to not match the gated one")
+	}
+
+	d.Handle(ChatMessage{Username: "mod1", Permission: Moderator, Text: "rc!alt+f10,wait:800,enter"})
+	if ex.QueueLen() != 2 {
+		t.Fatal("expected a moderator to bypass sequence gating")
+	}
+}
+
+func TestDispatcherHandleRedemptionRunsSequence(t *testing.T) {
+	cfg := testConfig()
+	cfg.RewardActions = []config.RewardAction{
+		{Action: "alt+f10,wait:800,enter", RewardTitle: "Open Menu", RewardID: "reward-1"},
+	}
+	d, ex := testDispatcher(cfg)
+
+	if got := d.HandleRedemption("reward-1", "viewer1"); got != RedemptionFulfilled {
+		t.Fatalf("expected RedemptionFulfilled, got %v", got)
+	}
+	if ex.QueueLen() != 1 {
+		t.Fatal("expected the redemption to queue its sequence")
+	}
+}

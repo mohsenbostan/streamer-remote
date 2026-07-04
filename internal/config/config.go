@@ -56,10 +56,11 @@ type Config struct {
 	GlobalCooldownMs  int `yaml:"globalCooldownMs" json:"globalCooldownMs"`
 	PerUserCooldownMs int `yaml:"perUserCooldownMs" json:"perUserCooldownMs"`
 
-	MaxComboSize int `yaml:"maxComboSize" json:"maxComboSize"`
-	TapHoldMs    int `yaml:"tapHoldMs" json:"tapHoldMs"`
-	MaxHoldMs    int `yaml:"maxHoldMs" json:"maxHoldMs"`
-	MaxMoveStep  int `yaml:"maxMoveStep" json:"maxMoveStep"`
+	MaxComboSize     int `yaml:"maxComboSize" json:"maxComboSize"`
+	MaxSequenceSteps int `yaml:"maxSequenceSteps" json:"maxSequenceSteps"`
+	TapHoldMs        int `yaml:"tapHoldMs" json:"tapHoldMs"`
+	MaxHoldMs        int `yaml:"maxHoldMs" json:"maxHoldMs"`
+	MaxMoveStep      int `yaml:"maxMoveStep" json:"maxMoveStep"`
 
 	Blacklist     Blacklist      `yaml:"blacklist" json:"blacklist"`
 	RewardActions []RewardAction `yaml:"rewardActions" json:"rewardActions"`
@@ -85,9 +86,10 @@ globalCooldownMs: 150     # minimum time between any two accepted commands
 perUserCooldownMs: 1500   # minimum time between commands from the same viewer
 
 maxComboSize: 3           # max number of keys/buttons chained with '+' in one command
+maxSequenceSteps: 6       # max comma-separated steps in one command, e.g. alt+f10,wait:800,enter
 tapHoldMs: 40             # how long a tapped key/button is held down, in ms
-maxHoldMs: 3000           # upper bound for any explicit hold duration, in ms
-maxMoveStep: 300          # upper bound for a single mouse-move command, in pixels
+maxHoldMs: 3000           # upper bound for any explicit hold or wait duration, in ms
+maxMoveStep: 300          # upper bound for a single mouse-move command's distance on either axis, in pixels
 
 blacklist:
   deniedKeys: []          # extra keys to block, beyond the built-in unsafe ones
@@ -297,8 +299,11 @@ func (c *Config) validate() error {
 	if c.GlobalCooldownMs < 0 || c.PerUserCooldownMs < 0 {
 		return fmt.Errorf("cooldowns must not be negative")
 	}
-	if c.MaxComboSize < 1 || c.MaxComboSize > 6 {
-		return fmt.Errorf("maxComboSize must be between 1 and 6")
+	if c.MaxComboSize < 1 || c.MaxComboSize > 20 {
+		return fmt.Errorf("maxComboSize must be between 1 and 20")
+	}
+	if c.MaxSequenceSteps < 1 || c.MaxSequenceSteps > 20 {
+		return fmt.Errorf("maxSequenceSteps must be between 1 and 20")
 	}
 	if c.TapHoldMs <= 0 || c.TapHoldMs > 2000 {
 		return fmt.Errorf("tapHoldMs must be between 1 and 2000")

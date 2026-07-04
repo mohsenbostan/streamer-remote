@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/supervisor"
 )
 
 // twitchAuthState tracks the in-progress device-code login so the
@@ -44,6 +46,12 @@ func (t *twitchAuthState) setError(err error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.state, t.err = "error", err.Error()
+}
+
+func (t *twitchAuthState) reset() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.state, t.verificationURI, t.userCode, t.err = "", "", "", ""
 }
 
 func (t *twitchAuthState) snapshot() twitchAuthStateDTO {
@@ -119,4 +127,35 @@ func (s *Server) handleTwitchConnect(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleTwitchAuthState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.authState.snapshot())
+}
+
+// handleTwitchLogout tears down the running connection, forgets the
+// cached OAuth token, and clears the saved channel/Client ID — a full
+// reset so the Overview tab shows the first-time setup form again, for
+// switching to a different Twitch account or channel.
+func (s *Server) handleTwitchLogout(w http.ResponseWriter, _ *http.Request) {
+	s.twitchMu.Lock()
+	if s.twitchSession != nil {
+		s.twitchSession.Stop()
+		s.twitchSession = nil
+	}
+	s.twitchMu.Unlock()
+
+	if err := os.Remove(supervisor.TokenCachePath); err != nil && !os.IsNotExist(err) {
+		s.logger.Warn("could not remove cached twitch token", "error", err)
+	}
+
+	if err := config.UpdateTwitchFields(s.configPath, "", ""); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	reloaded, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.dispatcher.UpdateConfig(reloaded)
+	s.authState.reset()
+	s.logger.Info("disconnected from twitch", "by", "dashboard")
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -31,7 +31,7 @@ export default function App() {
             <RewardsTab />
           </TabsContent>
           <TabsContent value="settings" className="mt-6">
-            <SettingsTab />
+            <SettingsTab status={status} onChanged={refresh} />
           </TabsContent>
         </Tabs>
       </main>

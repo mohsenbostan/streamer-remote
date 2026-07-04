@@ -19,11 +19,12 @@ func testServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := &config.Config{
-		Prefix:       "rc!",
-		MaxComboSize: 3,
-		TapHoldMs:    40,
-		MaxHoldMs:    3000,
-		MaxMoveStep:  300,
+		Prefix:           "rc!",
+		MaxComboSize:     3,
+		MaxSequenceSteps: 4,
+		TapHoldMs:        40,
+		MaxHoldMs:        3000,
+		MaxMoveStep:      300,
 	}
 	if err := cfg.Save(path); err != nil {
 		t.Fatal(err)
@@ -152,6 +153,38 @@ func TestTestEndpointRejectsUnknownPermission(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestTwitchLogoutClearsConfigAndAuthState(t *testing.T) {
+	srv, path := testServer(t)
+	if err := config.UpdateTwitchFields(path, "somechannel", "someclientid"); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.dispatcher.UpdateConfig(reloaded)
+	srv.authState.setConnected()
+
+	ts := httptest.NewServer(srv.routes())
+	defer ts.Close()
+
+	resp := doJSON(t, ts, http.MethodPost, "/api/twitch/logout", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", resp.StatusCode)
+	}
+
+	if got := srv.dispatcher.Config(); got.Twitch.Channel != "" || got.Twitch.ClientID != "" {
+		t.Fatalf("expected twitch fields cleared from live config, got %+v", got.Twitch)
+	}
+	if got, err := config.Load(path); err != nil || got.Twitch.Channel != "" {
+		t.Fatalf("expected twitch fields cleared on disk, got %+v (err=%v)", got, err)
+	}
+	if got := srv.authState.snapshot(); got.State != "idle" {
+		t.Fatalf("expected auth state reset to idle, got %+v", got)
 	}
 }
 

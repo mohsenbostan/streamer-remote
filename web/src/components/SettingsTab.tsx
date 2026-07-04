@@ -5,10 +5,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { api, type Settings, type UpdateInfo } from "@/lib/api"
+import { api, type Settings, type StatusResponse, type UpdateInfo } from "@/lib/api"
 import { usePolling } from "@/hooks/usePolling"
 import { toast } from "sonner"
-import { DownloadCloud, RefreshCw } from "lucide-react"
+import { DownloadCloud, LogOut, RefreshCw } from "lucide-react"
 
 function Field({
   label,
@@ -39,7 +39,13 @@ function textToBlacklist(text: string): string[][] {
     .map((line) => line.split("+").map((k) => k.trim().toLowerCase()).filter(Boolean))
 }
 
-export function SettingsTab() {
+export function SettingsTab({
+  status,
+  onChanged,
+}: {
+  status: StatusResponse | null
+  onChanged: () => void
+}) {
   const { data: loaded, refresh } = usePolling<Settings>(() => api.settings(), 60_000)
   const [settings, setSettings] = useState<Settings | null>(null)
   const [deniedKeysText, setDeniedKeysText] = useState("")
@@ -94,13 +100,22 @@ export function SettingsTab() {
           <Field label="Command prefix" hint="e.g. rc! — kept unusual to avoid colliding with other bots">
             <Input value={settings.prefix} onChange={(e) => set("prefix", e.target.value)} />
           </Field>
-          <Field label="Max combo size" hint="Keys chained with '+' in one command">
+          <Field label="Max combo size" hint="Keys chained with '+' in one step, e.g. ctrl+shift+w">
             <Input
               type="number"
               min={1}
-              max={6}
+              max={20}
               value={settings.maxComboSize}
               onChange={(e) => set("maxComboSize", Number(e.target.value))}
+            />
+          </Field>
+          <Field label="Max sequence steps" hint="Comma-separated steps in one command, e.g. alt+f10,wait:800,enter">
+            <Input
+              type="number"
+              min={1}
+              max={20}
+              value={settings.maxSequenceSteps}
+              onChange={(e) => set("maxSequenceSteps", Number(e.target.value))}
             />
           </Field>
           <Field label="Global cooldown (ms)" hint="Minimum time between any two commands">
@@ -127,7 +142,7 @@ export function SettingsTab() {
               onChange={(e) => set("tapHoldMs", Number(e.target.value))}
             />
           </Field>
-          <Field label="Max hold (ms)" hint="Upper bound for an explicit hold: duration">
+          <Field label="Max hold (ms)" hint="Upper bound for an explicit hold: or wait: duration">
             <Input
               type="number"
               min={1}
@@ -135,7 +150,7 @@ export function SettingsTab() {
               onChange={(e) => set("maxHoldMs", Number(e.target.value))}
             />
           </Field>
-          <Field label="Max mouse move (px)">
+          <Field label="Max mouse move (px)" hint="Upper bound per axis, including move:<dx>:<dy>">
             <Input
               type="number"
               min={1}
@@ -204,8 +219,54 @@ export function SettingsTab() {
       </div>
 
       <Separator />
+      <TwitchAccountCard status={status} onChanged={onChanged} />
+
+      <Separator />
       <UpdateCard />
     </div>
+  )
+}
+
+function TwitchAccountCard({
+  status,
+  onChanged,
+}: {
+  status: StatusResponse | null
+  onChanged: () => void
+}) {
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  if (!status || status.localOnly || !status.twitchConfigured) return null
+
+  async function logout() {
+    setLoggingOut(true)
+    try {
+      await api.logoutTwitch()
+      toast.success("Disconnected from Twitch")
+      onChanged()
+    } catch (e) {
+      toast.error("Couldn't disconnect", { description: String(e) })
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Twitch account</CardTitle>
+        <CardDescription>Connected as #{status.channel}.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="outline" onClick={logout} disabled={loggingOut} className="gap-1.5">
+          <LogOut className="size-4" /> Log out
+        </Button>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Forgets the saved channel, Client ID, and login — use this to set up a different Twitch
+          account or channel from scratch.
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -18,6 +18,7 @@ export interface Settings {
   globalCooldownMs: number
   perUserCooldownMs: number
   maxComboSize: number
+  maxSequenceSteps: number
   tapHoldMs: number
   maxHoldMs: number
   maxMoveStep: number
@@ -81,6 +82,7 @@ export const api = {
     }),
   connectTwitch: () => request<void>("/api/twitch/connect", { method: "POST" }),
   twitchAuthState: () => request<TwitchAuthState>("/api/twitch/auth"),
+  logoutTwitch: () => request<void>("/api/twitch/logout", { method: "POST" }),
 
   pause: () => request<void>("/api/pause", { method: "POST" }),
   resume: () => request<void>("/api/resume", { method: "POST" }),

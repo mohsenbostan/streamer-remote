@@ -25,21 +25,21 @@ const (
 	RedemptionRefunded
 )
 
-// gatedAction is a reward-only action, precomputed once from config so
-// that neither the chat path nor the redemption path needs to re-parse or
-// re-validate it on every message.
+// gatedAction is a reward-only action (a combo or a whole sequence),
+// precomputed once from config so that neither the chat path nor the
+// redemption path needs to re-parse or re-validate it on every message.
 type gatedAction struct {
 	rewardID    string
 	rewardTitle string
-	actions     []Action
+	steps       []Step
 	signature   string
 }
 
-// actionSignature is an order-independent identity for a parsed combo,
-// used to recognize "this is the same action" whether it arrives as
-// "alt+f4" or "f4+alt" typed in chat. Hold duration and move/scroll
-// amount are deliberately excluded: gating is about which action, not how
-// long/how far.
+// actionSignature is an order-independent identity for one step's
+// simultaneous actions, used to recognize "this is the same combo"
+// whether it arrives as "alt+f4" or "f4+alt" typed in chat. Hold duration
+// and move/scroll amount are deliberately excluded: gating is about which
+// action, not how long/how far.
 func actionSignature(actions []Action) string {
 	parts := make([]string, len(actions))
 	for i, a := range actions {
@@ -47,6 +47,31 @@ func actionSignature(actions []Action) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, "+")
+}
+
+// sequenceSignature identifies a whole sequence. Unlike a single step,
+// steps ARE order-sensitive — "press A then B" isn't the same as "press B
+// then A" — so this only sorts within each step, not across them.
+func sequenceSignature(steps []Step) string {
+	parts := make([]string, len(steps))
+	for i, s := range steps {
+		if len(s.Actions) == 0 {
+			parts[i] = fmt.Sprintf("wait:%d", s.HoldMs)
+			continue
+		}
+		parts[i] = actionSignature(s.Actions)
+	}
+	return strings.Join(parts, ",")
+}
+
+// flattenActions collects every action across every step, for blacklist
+// checks where only "is this key used anywhere" matters, not order.
+func flattenActions(steps []Step) []Action {
+	var all []Action
+	for _, s := range steps {
+		all = append(all, s.Actions...)
+	}
+	return all
 }
 
 // buildGatedActions parses each configured reward action once at startup.
@@ -62,7 +87,7 @@ func buildGatedActions(cfg *config.Config, logger *slog.Logger) (bySignature, by
 			logger.Warn("skipping rewardActions entry with no rewardId", "action", ra.Action)
 			continue
 		}
-		actions, err := ParseCombo(ra.Action, cfg)
+		steps, err := ParseSequence(ra.Action, cfg)
 		if err != nil {
 			logger.Warn("skipping invalid rewardActions entry", "action", ra.Action, "error", err)
 			continue
@@ -70,8 +95,8 @@ func buildGatedActions(cfg *config.Config, logger *slog.Logger) (bySignature, by
 		ga := gatedAction{
 			rewardID:    ra.RewardID,
 			rewardTitle: ra.RewardTitle,
-			actions:     actions,
-			signature:   actionSignature(actions),
+			steps:       steps,
+			signature:   sequenceSignature(steps),
 		}
 		bySignature[ga.signature] = ga
 		byRewardID[ga.rewardID] = ga
@@ -95,13 +120,12 @@ func (d *Dispatcher) HandleRedemption(rewardID, redeemerUsername string) Redempt
 		d.logger.Info("refunding redemption: remote is paused", "user", redeemerUsername, "reward", ga.rewardTitle)
 		return RedemptionRefunded
 	}
-	if reason := snap.blacklist.Check(ga.actions); reason != "" {
+	if reason := snap.blacklist.Check(flattenActions(ga.steps)); reason != "" {
 		d.logger.Warn("refunding redemption: action is blacklisted", "user", redeemerUsername, "reward", ga.rewardTitle, "reason", reason)
 		return RedemptionRefunded
 	}
 
-	hold := EffectiveHoldMs(ga.actions, snap.cfg.TapHoldMs)
-	d.executor.Submit(ga.actions, hold)
+	d.executor.Submit(ga.steps)
 	d.logger.Info("redeemed", "user", redeemerUsername, "reward", ga.rewardTitle)
 	return RedemptionFulfilled
 }

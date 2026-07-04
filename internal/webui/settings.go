@@ -15,6 +15,7 @@ type Settings struct {
 	GlobalCooldownMs  int              `json:"globalCooldownMs"`
 	PerUserCooldownMs int              `json:"perUserCooldownMs"`
 	MaxComboSize      int              `json:"maxComboSize"`
+	MaxSequenceSteps  int              `json:"maxSequenceSteps"`
 	TapHoldMs         int              `json:"tapHoldMs"`
 	MaxHoldMs         int              `json:"maxHoldMs"`
 	MaxMoveStep       int              `json:"maxMoveStep"`
@@ -29,6 +30,7 @@ func settingsFromConfig(cfg *config.Config) Settings {
 		GlobalCooldownMs:  cfg.GlobalCooldownMs,
 		PerUserCooldownMs: cfg.PerUserCooldownMs,
 		MaxComboSize:      cfg.MaxComboSize,
+		MaxSequenceSteps:  cfg.MaxSequenceSteps,
 		TapHoldMs:         cfg.TapHoldMs,
 		MaxHoldMs:         cfg.MaxHoldMs,
 		MaxMoveStep:       cfg.MaxMoveStep,
@@ -55,6 +57,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	next.GlobalCooldownMs = in.GlobalCooldownMs
 	next.PerUserCooldownMs = in.PerUserCooldownMs
 	next.MaxComboSize = in.MaxComboSize
+	next.MaxSequenceSteps = in.MaxSequenceSteps
 	next.TapHoldMs = in.TapHoldMs
 	next.MaxHoldMs = in.MaxHoldMs
 	next.MaxMoveStep = in.MaxMoveStep

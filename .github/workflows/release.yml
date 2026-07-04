@@ -1,47 +1,100 @@
 name: Release
 
-# Tag a commit with e.g. "v1.2.0" and push the tag to build and publish a
-# Windows binary. The app's built-in updater looks for exactly this asset
-# name attached to the latest GitHub Release (see internal/update).
+# Runs only after CI succeeds on main — never duplicates CI's vet/test/build,
+# just computes the next version from Conventional Commits since the last
+# tag and, if there's anything release-worthy, builds and publishes it.
+# workflow_dispatch is a manual escape hatch for forcing a release check.
 on:
-  push:
-    tags: ["v*.*.*"]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0 # full history + tags, needed to scan commits since the last release
+
+      - name: Compute next version from Conventional Commits
+        id: version
+        shell: bash
+        run: |
+          set -e
+          last_tag=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+          range="${last_tag:+$last_tag..}"
+          echo "Last release: ${last_tag:-none}"
+
+          bump="none"
+          while IFS= read -r -d '' msg; do
+            first_line=$(printf '%s' "$msg" | head -n1)
+            # grep tests its input line-by-line by default, so this
+            # correctly matches "BREAKING CHANGE:" as its own paragraph
+            # anywhere in the body, not just the subject line.
+            if printf '%s' "$msg" | grep -qE '^BREAKING CHANGE:' || printf '%s' "$first_line" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:'; then
+              bump="major"
+            elif [ "$bump" != "major" ] && printf '%s' "$first_line" | grep -qE '^feat(\([^)]*\))?:'; then
+              bump="minor"
+            elif [ "$bump" = "none" ] && printf '%s' "$first_line" | grep -qE '^fix(\([^)]*\))?:'; then
+              bump="patch"
+            fi
+          done < <(git log $range --format=%B -z)
+
+          echo "Bump: $bump"
+          if [ "$bump" = "none" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ver="${last_tag#v}"
+          ver="${ver:-0.0.0}"
+          IFS='.' read -r major minor patch <<< "$ver"
+          case "$bump" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+          next="v$major.$minor.$patch"
+          echo "Next version: $next"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
+        if: steps.version.outputs.skip != 'true'
         with:
           go-version-file: go.mod
 
       - uses: actions/setup-node@v4
+        if: steps.version.outputs.skip != 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
       - name: Build dashboard frontend
+        if: steps.version.outputs.skip != 'true'
         working-directory: web
         run: |
           npm ci
           npm run build
 
-      - run: go vet ./...
-      - run: go test ./... -race
+      - name: Build exe
+        if: steps.version.outputs.skip != 'true'
+        run: go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }} -H=windowsgui" -o streamer-remote-windows-amd64.exe ./cmd/streamerctl
 
-      - name: Build
-        # -H=windowsgui: no console window. The dashboard + tray icon are
-        # the whole UI; a flashing terminal would just be visual noise for
-        # a non-technical streamer.
-        run: go build -ldflags="-s -w -X main.version=${{ github.ref_name }} -H=windowsgui" -o streamer-remote-windows-amd64.exe ./cmd/streamerctl
-
-      - name: Publish release
+      - name: Tag and publish release
+        if: steps.version.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create ${{ github.ref_name }} streamer-remote-windows-amd64.exe --title ${{ github.ref_name }} --generate-notes
+        run: |
+          git tag ${{ steps.version.outputs.version }}
+          git push origin ${{ steps.version.outputs.version }}
+          gh release create ${{ steps.version.outputs.version }} streamer-remote-windows-amd64.exe --title ${{ steps.version.outputs.version }} --generate-notes

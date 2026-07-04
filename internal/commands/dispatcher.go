@@ -115,26 +115,25 @@ func (d *Dispatcher) Handle(msg ChatMessage) {
 		}
 	}
 
-	actions, err := ParseCombo(body, cfg)
+	steps, err := ParseSequence(body, cfg)
 	if err != nil {
 		d.logger.Debug("dropped: invalid command", "user", msg.Username, "text", msg.Text, "error", err)
 		return
 	}
 
 	if !isMod {
-		if ga, gated := snap.gatedBySignature[actionSignature(actions)]; gated {
+		if ga, gated := snap.gatedBySignature[sequenceSignature(steps)]; gated {
 			d.logger.Info("blocked: reward-only action", "user", msg.Username, "reward", ga.rewardTitle)
 			return
 		}
-		if reason := snap.blacklist.Check(actions); reason != "" {
+		if reason := snap.blacklist.Check(flattenActions(steps)); reason != "" {
 			d.logger.Info("blocked command", "user", msg.Username, "text", msg.Text, "reason", reason)
 			return
 		}
 		d.commitCooldown(msg.Username, time.Now())
 	}
 
-	hold := EffectiveHoldMs(actions, cfg.TapHoldMs)
-	d.executor.Submit(actions, hold)
+	d.executor.Submit(steps)
 	d.logger.Debug("dispatched", "user", msg.Username, "text", msg.Text)
 }
 

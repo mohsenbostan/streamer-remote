@@ -90,8 +90,9 @@ export function RewardsTab() {
                   onChange={(e) => setAction(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Same syntax as a chat command, without the prefix — e.g. <code>lwin</code> or{" "}
-                  <code>hold:w:2000</code>.
+                  Same syntax as a chat command, without the prefix — e.g. <code>lwin</code>,{" "}
+                  <code>move:50:-30</code>, or a sequence like{" "}
+                  <code>alt+f10,wait:800,enter</code>.
                 </p>
               </div>
               <div className="grid gap-2">
