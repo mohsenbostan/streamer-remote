@@ -9,9 +9,20 @@ import (
 	"streamer-remote/internal/config"
 )
 
+// nopSink is an InputSink that does nothing, so tests can exercise the
+// dispatcher and executor without moving the real cursor or keyboard.
+type nopSink struct{}
+
+func (nopSink) KeyDown(string) error                 { return nil }
+func (nopSink) KeyUp(string) error                   { return nil }
+func (nopSink) MouseDown(string) error               { return nil }
+func (nopSink) MouseUp(string) error                 { return nil }
+func (nopSink) MoveMouseRelative(int32, int32) error { return nil }
+func (nopSink) ScrollMouse(int32) error              { return nil }
+
 func testDispatcher(cfg *config.Config) (*Dispatcher, *Executor) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	executor := NewExecutor(logger, 10)
+	executor := NewExecutor(logger, 10, nopSink{})
 	return NewDispatcher(cfg, logger, executor), executor
 }
 

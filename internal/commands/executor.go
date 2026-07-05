@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"time"
-
-	"streamer-remote/internal/input"
 )
 
 // job is a sequence of steps queued for execution.
@@ -21,12 +19,14 @@ type job struct {
 type Executor struct {
 	jobs   chan job
 	logger *slog.Logger
+	sink   InputSink
 }
 
-func NewExecutor(logger *slog.Logger, queueSize int) *Executor {
+func NewExecutor(logger *slog.Logger, queueSize int, sink InputSink) *Executor {
 	return &Executor{
 		jobs:   make(chan job, queueSize),
 		logger: logger,
+		sink:   sink,
 	}
 }
 
@@ -77,16 +77,16 @@ func (e *Executor) runStep(step Step) {
 	for _, a := range step.Actions {
 		switch a.Kind {
 		case KindKey:
-			if err := input.KeyDown(a.Name); err != nil {
+			if err := e.sink.KeyDown(a.Name); err != nil {
 				e.logger.Error("key down failed", "key", a.Name, "error", err)
 			}
 		case KindClick:
-			if err := input.MouseDown(a.Name); err != nil {
+			if err := e.sink.MouseDown(a.Name); err != nil {
 				e.logger.Error("mouse down failed", "button", a.Name, "error", err)
 			}
 		case KindMove:
 			dx, dy := moveDelta(a)
-			if err := input.MoveMouseRelative(dx, dy); err != nil {
+			if err := e.sink.MoveMouseRelative(dx, dy); err != nil {
 				e.logger.Error("mouse move failed", "direction", a.Name, "error", err)
 			}
 		case KindScroll:
@@ -94,7 +94,7 @@ func (e *Executor) runStep(step Step) {
 			if a.Name == "down" {
 				delta = -delta
 			}
-			if err := input.ScrollMouse(delta); err != nil {
+			if err := e.sink.ScrollMouse(delta); err != nil {
 				e.logger.Error("scroll failed", "direction", a.Name, "error", err)
 			}
 		}
@@ -106,11 +106,11 @@ func (e *Executor) runStep(step Step) {
 		a := step.Actions[i]
 		switch a.Kind {
 		case KindKey:
-			if err := input.KeyUp(a.Name); err != nil {
+			if err := e.sink.KeyUp(a.Name); err != nil {
 				e.logger.Error("key up failed", "key", a.Name, "error", err)
 			}
 		case KindClick:
-			if err := input.MouseUp(a.Name); err != nil {
+			if err := e.sink.MouseUp(a.Name); err != nil {
 				e.logger.Error("mouse up failed", "button", a.Name, "error", err)
 			}
 		}

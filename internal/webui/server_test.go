@@ -17,6 +17,17 @@ import (
 	"streamer-remote/internal/tts"
 )
 
+// nopSink is an InputSink that does nothing, so server tests never actuate
+// real keyboard/mouse input when a dispatched command runs.
+type nopSink struct{}
+
+func (nopSink) KeyDown(string) error                 { return nil }
+func (nopSink) KeyUp(string) error                   { return nil }
+func (nopSink) MouseDown(string) error               { return nil }
+func (nopSink) MouseUp(string) error                 { return nil }
+func (nopSink) MoveMouseRelative(int32, int32) error { return nil }
+func (nopSink) ScrollMouse(int32) error              { return nil }
+
 func testServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -34,7 +45,7 @@ func testServer(t *testing.T) (*Server, string) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	executor := commands.NewExecutor(logger, 10)
+	executor := commands.NewExecutor(logger, 10, nopSink{})
 	dispatcher := commands.NewDispatcher(cfg, logger, executor)
 
 	srv := New(context.Background(), path, dispatcher, logger, "v1.2.3", true, NewHub())

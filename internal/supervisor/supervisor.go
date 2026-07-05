@@ -11,6 +11,7 @@ import (
 	"streamer-remote/internal/backoff"
 	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/input"
 	"streamer-remote/internal/kick"
 	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitch"
@@ -48,7 +49,7 @@ type Core struct {
 
 // NewCore builds and starts the always-on subsystems.
 func NewCore(ctx context.Context, cfg *config.Config, logger *slog.Logger) *Core {
-	executor := commands.NewExecutor(logger, executorQueue)
+	executor := commands.NewExecutor(logger, executorQueue, input.NewSink())
 	dispatcher := commands.NewDispatcher(cfg, logger, executor)
 
 	go supervise(ctx, logger, "executor", func(ctx context.Context) { executor.Run(ctx) })
