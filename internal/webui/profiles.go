@@ -26,17 +26,20 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, _ *http.Request) {
 }
 
 type saveProfileRequest struct {
-	Name    string                `json:"name"`
-	Color   string                `json:"color"`
-	Rewards []config.RewardAction `json:"rewards"`
+	Name         string                `json:"name"`
+	OriginalName string                `json:"originalName"`
+	Color        string                `json:"color"`
+	Rewards      []config.RewardAction `json:"rewards"`
 }
 
 // handleSaveProfile creates or overwrites a profile with the given
 // rewards, which the caller supplies explicitly: either a snapshot of
-// what's currently live (the "save current as profile" button) or a
-// freshly drafted set (the "new profile" editor), neither of which
-// touches Twitch or the live rewardActions until the profile is later
-// activated.
+// what's currently live (the "save current as profile" button), a
+// freshly drafted set (the "new profile" editor), or an edited version
+// of an existing profile (the "edit profile" editor). None of these
+// touch Twitch or the live rewardActions until the profile is later
+// activated. OriginalName, if set and different from Name, renames the
+// profile: the old entry is deleted before the new one is saved.
 func (s *Server) handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 	var req saveProfileRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -63,6 +66,14 @@ func (s *Server) handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		rewards = append(rewards, config.RewardAction{Action: action, RewardTitle: title, Cost: ra.Cost})
+	}
+
+	originalName := strings.TrimSpace(req.OriginalName)
+	if originalName != "" && originalName != name {
+		if err := config.DeleteRewardProfile(s.configPath, originalName); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	profile := config.RewardProfile{Name: name, Color: strings.TrimSpace(req.Color), Rewards: rewards}

@@ -119,10 +119,10 @@ export const api = {
     request<void>(`/api/rewards/${encodeURIComponent(rewardId)}`, { method: "DELETE" }),
 
   rewardProfiles: () => request<RewardProfilesResponse>("/api/reward-profiles"),
-  saveRewardProfile: (name: string, color: string, rewards: RewardDraft[]) =>
+  saveRewardProfile: (name: string, color: string, rewards: RewardDraft[], originalName?: string) =>
     request<RewardProfile>("/api/reward-profiles", {
       method: "POST",
-      body: JSON.stringify({ name, color, rewards }),
+      body: JSON.stringify({ name, color, rewards, originalName }),
     }),
   deleteRewardProfile: (name: string) =>
     request<void>(`/api/reward-profiles/${encodeURIComponent(name)}`, { method: "DELETE" }),

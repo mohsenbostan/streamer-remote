@@ -13,10 +13,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { api, type RewardAction, type RewardDraft, type RewardProfilesResponse } from "@/lib/api"
+import {
+  api,
+  type RewardAction,
+  type RewardDraft,
+  type RewardProfile,
+  type RewardProfilesResponse,
+} from "@/lib/api"
 import { usePolling } from "@/hooks/usePolling"
 import { toast } from "sonner"
-import { Gift, Plus, Trash2, Layers, Check, X, FolderPlus } from "lucide-react"
+import { Gift, Plus, Trash2, Layers, Check, X, FolderPlus, Pencil } from "lucide-react"
 
 const PROFILE_COLORS = [
   "#f87171",
@@ -141,6 +147,10 @@ function RewardProfilesCard({
   const [newColor, setNewColor] = useState("")
   const [newDrafts, setNewDrafts] = useState<RewardDraft[]>([])
   const [busy, setBusy] = useState<string | null>(null)
+  const [editingProfile, setEditingProfile] = useState<RewardProfile | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editColor, setEditColor] = useState("")
+  const [editDrafts, setEditDrafts] = useState<RewardDraft[]>([])
 
   const profiles = data?.profiles ?? []
   const active = data?.active ?? ""
@@ -219,9 +229,39 @@ function RewardProfilesCard({
     }
   }
 
+  function openEdit(p: RewardProfile) {
+    setEditingProfile(p)
+    setEditName(p.name)
+    setEditColor(p.color ?? "")
+    setEditDrafts(p.rewards.map((r) => ({ action: r.action, rewardTitle: r.rewardTitle, cost: r.cost })))
+  }
+
+  async function saveEdit() {
+    if (!editingProfile) return
+    if (!editName.trim()) {
+      toast.error("Give the profile a name")
+      return
+    }
+    if (editDrafts.length === 0) {
+      toast.error("A profile needs at least one reward")
+      return
+    }
+    setBusy("edit")
+    try {
+      await api.saveRewardProfile(editName.trim(), editColor, editDrafts, editingProfile.name)
+      toast.success(`Updated "${editName.trim()}"`)
+      setEditingProfile(null)
+      refresh()
+    } catch (e) {
+      toast.error("Couldn't update profile", { description: String(e) })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex flex-col gap-3">
         <div>
           <CardTitle>Reward profiles</CardTitle>
           <CardDescription>
@@ -229,7 +269,7 @@ function RewardProfilesCard({
             Twitch with that set.
           </CardDescription>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2">
           <Dialog open={newOpen} onOpenChange={setNewOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="gap-1.5">
@@ -271,7 +311,7 @@ function RewardProfilesCard({
           <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="gap-1.5">
-                <Plus className="size-4" /> Save current as profile
+                <Plus className="size-4" /> Save current
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -311,14 +351,14 @@ function RewardProfilesCard({
             No saved profiles yet.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {profiles.map((p) => (
               <div
                 key={p.name}
-                className="flex aspect-square flex-col justify-between rounded-lg border p-3"
+                className="flex min-h-[132px] flex-col gap-3 rounded-lg border p-3"
                 style={p.color ? { borderTopColor: p.color, borderTopWidth: 4 } : undefined}
               >
-                <div>
+                <div className="min-w-0">
                   {p.name === active ? (
                     <Badge className="gap-1">
                       <Check className="size-3" /> Active
@@ -326,27 +366,62 @@ function RewardProfilesCard({
                   ) : (
                     <Badge variant="secondary">{p.rewards.length} rewards</Badge>
                   )}
-                  <div className="mt-2 text-sm font-medium break-words">{p.name}</div>
+                  <div className="mt-2 truncate text-sm font-medium" title={p.name}>
+                    {p.name}
+                  </div>
                 </div>
-                <div className="flex items-center justify-between gap-1">
+                <div className="mt-auto flex flex-col gap-1.5">
                   <Button
                     size="sm"
                     variant="secondary"
-                    className="grow"
                     disabled={p.name === active || busy !== null}
                     onClick={() => activate(p.name)}
                   >
                     {busy === p.name ? "Switching…" : "Activate"}
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove(p.name)}>
-                    <Trash2 className="size-4 text-muted-foreground" />
-                  </Button>
+                  <div className="flex items-center justify-center gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(p)}>
+                      <Pencil className="size-4 text-muted-foreground" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => remove(p.name)}>
+                      <Trash2 className="size-4 text-muted-foreground" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
       </CardContent>
+      <Dialog open={editingProfile !== null} onOpenChange={(o) => !o && setEditingProfile(null)}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit reward profile</DialogTitle>
+            <DialogDescription>
+              Changes here only affect this saved profile. Re-activate it to push them live on
+              Twitch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Profile name</Label>
+                <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Color (optional)</Label>
+                <ColorPicker value={editColor} onChange={setEditColor} />
+              </div>
+            </div>
+            <DraftRewardEditor drafts={editDrafts} setDrafts={setEditDrafts} />
+          </div>
+          <DialogFooter>
+            <Button onClick={saveEdit} disabled={busy === "edit"}>
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

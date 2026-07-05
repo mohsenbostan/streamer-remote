@@ -298,3 +298,46 @@ func TestRewardProfilesRejectsInvalidAction(t *testing.T) {
 		t.Fatalf("expected 400 for an invalid action, got %d", resp.StatusCode)
 	}
 }
+
+func TestRewardProfilesEditCanRenameAndReplaceRewards(t *testing.T) {
+	srv, path := testServer(t)
+	ts := httptest.NewServer(srv.routes())
+	defer ts.Close()
+
+	create := saveProfileRequest{
+		Name:    "Chill",
+		Rewards: []config.RewardAction{{Action: "lwin", RewardTitle: "Lock Screen", Cost: 1000}},
+	}
+	doJSON(t, ts, http.MethodPost, "/api/reward-profiles", create).Body.Close()
+	if err := config.SetActiveRewardProfile(path, "Chill"); err != nil {
+		t.Fatal(err)
+	}
+
+	edit := saveProfileRequest{
+		Name:         "Chaos",
+		OriginalName: "Chill",
+		Rewards: []config.RewardAction{
+			{Action: "alt+f4", RewardTitle: "Rage Quit", Cost: 750},
+			{Action: "lwin", RewardTitle: "Lock Screen", Cost: 1000},
+		},
+	}
+	resp := doJSON(t, ts, http.MethodPost, "/api/reward-profiles", edit)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.RewardProfiles) != 1 || reloaded.RewardProfiles[0].Name != "Chaos" {
+		t.Fatalf("expected only the renamed profile to remain, got %+v", reloaded.RewardProfiles)
+	}
+	if len(reloaded.RewardProfiles[0].Rewards) != 2 {
+		t.Fatalf("expected the edited reward list to persist, got %+v", reloaded.RewardProfiles[0].Rewards)
+	}
+	if reloaded.ActiveRewardProfile != "" {
+		t.Fatalf("expected renaming the active profile to clear the active pointer, got %q", reloaded.ActiveRewardProfile)
+	}
+}
