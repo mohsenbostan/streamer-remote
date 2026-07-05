@@ -155,6 +155,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/rewards", s.handleAddReward)
 	mux.HandleFunc("DELETE /api/rewards/{id}", s.handleRemoveReward)
 
+	mux.HandleFunc("GET /api/reward-profiles", s.handleListProfiles)
+	mux.HandleFunc("POST /api/reward-profiles", s.handleSaveProfile)
+	mux.HandleFunc("DELETE /api/reward-profiles/{name}", s.handleDeleteProfile)
+	mux.HandleFunc("POST /api/reward-profiles/{name}/activate", s.handleActivateProfile)
+
 	mux.HandleFunc("GET /api/update", s.handleCheckUpdate)
 	mux.HandleFunc("POST /api/update/apply", s.handleApplyUpdate)
 

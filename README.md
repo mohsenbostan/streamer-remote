@@ -106,6 +106,16 @@ refunded instead of silently doing nothing.
 Requires the channel to be a Twitch Affiliate or Partner (a Twitch
 requirement for Channel Points, not something this app can work around).
 
+### Reward profiles
+
+If you run different reward sets for different streams (e.g. a "chill"
+set vs. a "chaos" set for a subathon), save the current rewards as a
+named profile from the Rewards tab, build another set, and save that
+under a second name. Hitting Activate on a profile deletes every reward
+currently live on Twitch and recreates the profile's rewards in their
+place — a one-click swap instead of deleting and recreating each reward
+by hand.
+
 ## Logs
 
 Written to `logs/streamer-remote.log` (rotating JSON) and streamed live to

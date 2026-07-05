@@ -142,6 +142,101 @@ func TestAddAndRemoveRewardAction(t *testing.T) {
 	}
 }
 
+func TestRewardProfileSaveDeleteAndActivation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if _, err := Load(path); !errors.Is(err, ErrDefaultCreated) {
+		t.Fatalf("expected ErrDefaultCreated, got %v", err)
+	}
+
+	speedrun := RewardProfile{
+		Name: "Speedrun",
+		Rewards: []RewardAction{
+			{Action: "alt+f4", RewardTitle: "Rage Quit", Cost: 500},
+		},
+	}
+	if err := SaveRewardProfile(path, speedrun); err != nil {
+		t.Fatalf("SaveRewardProfile failed: %v", err)
+	}
+	chill := RewardProfile{
+		Name: "Chill",
+		Rewards: []RewardAction{
+			{Action: "lwin", RewardTitle: "Lock Screen", Cost: 1000},
+		},
+	}
+	if err := SaveRewardProfile(path, chill); err != nil {
+		t.Fatalf("second SaveRewardProfile failed: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardProfiles) != 2 {
+		t.Fatalf("expected 2 reward profiles, got %d", len(cfg.RewardProfiles))
+	}
+
+	// Saving again under an existing name overwrites rather than duplicating.
+	speedrun.Rewards[0].Cost = 750
+	if err := SaveRewardProfile(path, speedrun); err != nil {
+		t.Fatalf("overwrite SaveRewardProfile failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardProfiles) != 2 {
+		t.Fatalf("expected overwrite to keep 2 profiles, got %d", len(cfg.RewardProfiles))
+	}
+
+	if err := SetActiveRewardProfile(path, "Speedrun"); err != nil {
+		t.Fatalf("SetActiveRewardProfile failed: %v", err)
+	}
+	if err := AddRewardAction(path, RewardAction{Action: "alt+f4", RewardTitle: "Rage Quit", Cost: 750, RewardID: "reward-live"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ActiveRewardProfile != "Speedrun" {
+		t.Fatalf("expected active profile 'Speedrun', got %q", cfg.ActiveRewardProfile)
+	}
+	if len(cfg.RewardActions) != 1 || cfg.RewardActions[0].Cost != 750 {
+		t.Fatalf("expected the active profile's reward to be live, got %+v", cfg.RewardActions)
+	}
+
+	if err := ClearRewardActions(path); err != nil {
+		t.Fatalf("ClearRewardActions failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardActions) != 0 {
+		t.Fatalf("expected rewardActions cleared, got %+v", cfg.RewardActions)
+	}
+
+	// Deleting the currently active profile must also clear the pointer to it.
+	if err := DeleteRewardProfile(path, "Speedrun"); err != nil {
+		t.Fatalf("DeleteRewardProfile failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.RewardProfiles) != 1 || cfg.RewardProfiles[0].Name != "Chill" {
+		t.Fatalf("expected only 'Chill' to remain, got %+v", cfg.RewardProfiles)
+	}
+	if cfg.ActiveRewardProfile != "" {
+		t.Fatalf("expected activeRewardProfile cleared after deleting it, got %q", cfg.ActiveRewardProfile)
+	}
+
+	// Deleting an already-gone name must be a harmless no-op.
+	if err := DeleteRewardProfile(path, "Speedrun"); err != nil {
+		t.Fatalf("expected deleting a missing profile to be a no-op, got %v", err)
+	}
+}
+
 // TestLoadFillsDefaultsForFieldsMissingFromOldConfig reproduces the exact
 // bug reported after v1.2.0 shipped maxSequenceSteps: a config.yaml
 // written by an older release has no such key, so it unmarshals to 0 —

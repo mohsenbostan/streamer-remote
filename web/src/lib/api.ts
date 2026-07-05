@@ -34,6 +34,16 @@ export interface RewardAction {
   rewardId: string
 }
 
+export interface RewardProfile {
+  name: string
+  rewards: RewardAction[]
+}
+
+export interface RewardProfilesResponse {
+  profiles: RewardProfile[]
+  active: string
+}
+
 export interface TwitchAuthState {
   state: "idle" | "pending" | "connected" | "error"
   verificationUri?: string
@@ -100,6 +110,16 @@ export const api = {
     }),
   removeReward: (rewardId: string) =>
     request<void>(`/api/rewards/${encodeURIComponent(rewardId)}`, { method: "DELETE" }),
+
+  rewardProfiles: () => request<RewardProfilesResponse>("/api/reward-profiles"),
+  saveRewardProfile: (name: string) =>
+    request<RewardProfile>("/api/reward-profiles", { method: "POST", body: JSON.stringify({ name }) }),
+  deleteRewardProfile: (name: string) =>
+    request<void>(`/api/reward-profiles/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  activateRewardProfile: (name: string) =>
+    request<RewardProfilesResponse>(`/api/reward-profiles/${encodeURIComponent(name)}/activate`, {
+      method: "POST",
+    }),
 
   checkUpdate: () => request<UpdateInfo>("/api/update"),
   applyUpdate: () => request<void>("/api/update/apply", { method: "POST" }),

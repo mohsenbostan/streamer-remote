@@ -47,6 +47,14 @@ type RewardAction struct {
 	RewardID    string `yaml:"rewardId" json:"rewardId"`
 }
 
+// RewardProfile is a named, saved set of reward actions the streamer can
+// switch to as a group. Rewards here are templates (no RewardID): IDs only
+// exist for whichever set is actually live on Twitch at a given moment.
+type RewardProfile struct {
+	Name    string         `yaml:"name" json:"name"`
+	Rewards []RewardAction `yaml:"rewards" json:"rewards"`
+}
+
 type Config struct {
 	Twitch Twitch `yaml:"twitch" json:"twitch"`
 
@@ -66,6 +74,13 @@ type Config struct {
 
 	Blacklist     Blacklist      `yaml:"blacklist" json:"blacklist"`
 	RewardActions []RewardAction `yaml:"rewardActions" json:"rewardActions"`
+
+	// RewardProfiles are saved sets of reward actions the streamer can
+	// switch between; RewardActions above is always whichever set is
+	// currently live on Twitch. ActiveRewardProfile names the profile that
+	// produced it, or "" if RewardActions was built by hand instead.
+	RewardProfiles      []RewardProfile `yaml:"rewardProfiles" json:"rewardProfiles"`
+	ActiveRewardProfile string          `yaml:"activeRewardProfile" json:"activeRewardProfile"`
 
 	LogDebug bool `yaml:"logDebug" json:"logDebug"`
 }
@@ -101,6 +116,10 @@ blacklist:
 
 rewardActions: []         # actions only redeemable via Channel Points, never by typing in chat
                           # managed from the dashboard's Rewards tab, not by hand
+
+rewardProfiles: []        # saved sets of reward actions to switch between as a group
+                          # managed from the dashboard's Rewards tab, not by hand
+activeRewardProfile: ""   # name of the rewardProfiles entry currently live on Twitch, if any
 
 logDebug: false           # verbose logging for troubleshooting
 `
@@ -258,6 +277,90 @@ func RemoveRewardAction(path, rewardID string) error {
 	}
 	seq.Content = kept
 
+	return saveYAMLDoc(path, doc)
+}
+
+// ClearRewardActions empties the rewardActions list, keeping the rest of
+// the file intact. Used when switching reward profiles: the previously
+// live rewards are torn down on Twitch first, then this clears their
+// config entries before the newly selected profile's rewards are added.
+func ClearRewardActions(path string) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+	if seq := yamlMapValue(root, "rewardActions"); seq != nil {
+		seq.Content = nil
+	}
+	return saveYAMLDoc(path, doc)
+}
+
+// SaveRewardProfile adds or, if a profile with the same Name already
+// exists, replaces it in rewardProfiles.
+func SaveRewardProfile(path string, profile RewardProfile) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+
+	seq := yamlMapValue(root, "rewardProfiles")
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		seq = &yaml.Node{Kind: yaml.SequenceNode}
+		root.Content = append(root.Content, yamlScalar("rewardProfiles"), seq)
+	}
+
+	item := &yaml.Node{}
+	if err := item.Encode(profile); err != nil {
+		return fmt.Errorf("config: encode reward profile: %w", err)
+	}
+	for i, existing := range seq.Content {
+		if v := yamlMapValue(existing, "name"); v != nil && v.Value == profile.Name {
+			seq.Content[i] = item
+			return saveYAMLDoc(path, doc)
+		}
+	}
+	seq.Content = append(seq.Content, item)
+
+	return saveYAMLDoc(path, doc)
+}
+
+// DeleteRewardProfile removes the rewardProfiles entry with the given
+// name, if present, and clears activeRewardProfile if it pointed at it.
+// No-op if the name is already gone.
+func DeleteRewardProfile(path, name string) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+
+	if seq := yamlMapValue(root, "rewardProfiles"); seq != nil {
+		kept := seq.Content[:0]
+		for _, item := range seq.Content {
+			if item.Kind == yaml.MappingNode {
+				if v := yamlMapValue(item, "name"); v != nil && v.Value == name {
+					continue
+				}
+			}
+			kept = append(kept, item)
+		}
+		seq.Content = kept
+	}
+	if active := yamlMapValue(root, "activeRewardProfile"); active != nil && active.Value == name {
+		yamlSetMapString(root, "activeRewardProfile", "")
+	}
+
+	return saveYAMLDoc(path, doc)
+}
+
+// SetActiveRewardProfile records which rewardProfiles entry is currently
+// live on Twitch, purely for display; it does not itself change any
+// rewards.
+func SetActiveRewardProfile(path, name string) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+	yamlSetMapString(root, "activeRewardProfile", name)
 	return saveYAMLDoc(path, doc)
 }
 

@@ -228,3 +228,47 @@ func TestRewardsListEmptyIsEmptyArrayNotNull(t *testing.T) {
 		t.Fatalf("expected '[]' for no rewards, got %q", body)
 	}
 }
+
+func TestRewardProfilesSaveAndDelete(t *testing.T) {
+	srv, path := testServer(t)
+	ts := httptest.NewServer(srv.routes())
+	defer ts.Close()
+
+	resp := doJSON(t, ts, http.MethodPost, "/api/reward-profiles", saveProfileRequest{Name: "Chill"})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	listResp := doJSON(t, ts, http.MethodGet, "/api/reward-profiles", nil)
+	defer listResp.Body.Close()
+	var list rewardProfilesResponse
+	if err := json.NewDecoder(listResp.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Profiles) != 1 || list.Profiles[0].Name != "Chill" || list.Active != "Chill" {
+		t.Fatalf("expected 'Chill' saved and active, got %+v", list)
+	}
+
+	reloaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.RewardProfiles) != 1 || reloaded.ActiveRewardProfile != "Chill" {
+		t.Fatalf("expected profile persisted to disk, got %+v", reloaded)
+	}
+
+	delResp := doJSON(t, ts, http.MethodDelete, "/api/reward-profiles/Chill", nil)
+	defer delResp.Body.Close()
+	if delResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", delResp.StatusCode)
+	}
+
+	reloaded, err = config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.RewardProfiles) != 0 {
+		t.Fatalf("expected profile removed, got %+v", reloaded.RewardProfiles)
+	}
+}
