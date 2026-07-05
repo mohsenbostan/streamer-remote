@@ -5,6 +5,9 @@ export interface StatusResponse {
   twitchConnected: boolean
   paused: boolean
   channel: string
+  kickConfigured: boolean
+  kickConnected: boolean
+  kickChannel: string
 }
 
 export interface Blacklist {
@@ -102,6 +105,11 @@ export const api = {
   connectTwitch: () => request<void>("/api/twitch/connect", { method: "POST" }),
   twitchAuthState: () => request<TwitchAuthState>("/api/twitch/auth"),
   logoutTwitch: () => request<void>("/api/twitch/logout", { method: "POST" }),
+
+  setupKick: (channel: string) =>
+    request<void>("/api/kick/setup", { method: "POST", body: JSON.stringify({ channel }) }),
+  connectKick: () => request<void>("/api/kick/connect", { method: "POST" }),
+  logoutKick: () => request<void>("/api/kick/logout", { method: "POST" }),
 
   pause: () => request<void>("/api/pause", { method: "POST" }),
   resume: () => request<void>("/api/resume", { method: "POST" }),

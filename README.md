@@ -1,8 +1,10 @@
 # streamer-remote
 
-Lets Twitch chat trigger keyboard/mouse input on the streamer's own PC in
-real time. Single Windows executable, no runtime to install, configured
-and monitored through a local web dashboard.
+Lets Twitch and/or Kick chat trigger keyboard/mouse input on the
+streamer's own PC in real time — multistreaming to both at once works
+out of the box, since both just feed the same command dispatcher. Single
+Windows executable, no runtime to install, configured and monitored
+through a local web dashboard.
 
 ## Setup
 
@@ -16,7 +18,12 @@ dashboard in your browser at `http://127.0.0.1:47829`:
 2. Click **Connect** — first time, it shows a code and a link; open it,
    log in, done. It remembers you after that (auto-refreshes), so this
    only happens once, even across updates.
-3. Use the tray icon (Open Dashboard / Pause / Quit) any time the browser
+3. If you also stream to Kick, enter your Kick channel name in the same
+   tab and hit **Save & Connect** — no app registration or login needed,
+   since reading a channel's public chat doesn't require authentication.
+   Both connections run independently, so pausing/blacklisting/cooldowns
+   apply the same way no matter which platform a command came from.
+4. Use the tray icon (Open Dashboard / Pause / Quit) any time the browser
    tab is closed.
 
 Building from source: build the frontend once (`cd web && npm install &&
@@ -35,14 +42,14 @@ console window, matching the shipped release build.
 - **Settings** — prefix, cooldowns, mod-only mode, the blacklist, and
   checking/installing updates. Changes apply immediately, no restart.
 
-## Testing without Twitch
+## Testing without Twitch or Kick
 
-Run with `streamer-remote.exe --local`: no Twitch connection is made, but
-the dashboard still comes up, and its Overview tab's "quick test" box
-works exactly the same — pick a permission level (Everyone through
-Broadcaster) and send a command, e.g. `rc!w` or `rc!w+shift`, to check
-what an ordinary viewer can/can't do under mod-only mode or your
-blacklist. The quick test box works in normal (Twitch-connected) mode too.
+Run with `streamer-remote.exe --local`: no Twitch or Kick connection is
+made, but the dashboard still comes up, and its Overview tab's "quick
+test" box works exactly the same — pick a permission level (Everyone
+through Broadcaster) and send a command, e.g. `rc!w` or `rc!w+shift`, to
+check what an ordinary viewer can/can't do under mod-only mode or your
+blacklist. The quick test box works in normal (connected) mode too.
 
 ## Chat command syntax
 
@@ -91,6 +98,9 @@ and channel-points-only gating when they type a command themselves — a
 human mod present in chat is trusted with everything, no limits.
 
 ## Channel-points-only actions
+
+Twitch only — Kick chat commands work the same as everywhere else, but
+there's no Kick equivalent of Channel Points rewards wired up yet.
 
 Some actions are more fun (or more dangerous) as a paid, deliberate
 redemption rather than something anyone can spam in chat — locking the

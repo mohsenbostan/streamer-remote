@@ -95,6 +95,35 @@ func TestUpdateTwitchFieldsAddsMissingKeysToOldFormatFile(t *testing.T) {
 	}
 }
 
+func TestUpdateKickChannelPersists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if _, err := Load(path); !errors.Is(err, ErrDefaultCreated) {
+		t.Fatalf("expected ErrDefaultCreated, got %v", err)
+	}
+
+	if err := UpdateKickChannel(path, "mystreamer"); err != nil {
+		t.Fatalf("UpdateKickChannel failed: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("expected config to reload cleanly after update, got %v", err)
+	}
+	if cfg.Kick.Channel != "mystreamer" {
+		t.Fatalf("expected saved kick channel, got %+v", cfg.Kick)
+	}
+
+	if err := UpdateKickChannel(path, ""); err != nil {
+		t.Fatalf("UpdateKickChannel clear failed: %v", err)
+	}
+	cfg, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Kick.Channel != "" {
+		t.Fatalf("expected kick channel cleared, got %q", cfg.Kick.Channel)
+	}
+}
+
 func TestAddAndRemoveRewardAction(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if _, err := Load(path); !errors.Is(err, ErrDefaultCreated) {

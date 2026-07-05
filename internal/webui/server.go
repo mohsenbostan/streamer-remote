@@ -42,6 +42,9 @@ type Server struct {
 	twitchMu      sync.Mutex
 	twitchSession *supervisor.TwitchSession
 	authState     twitchAuthState
+
+	kickMu      sync.Mutex
+	kickSession *supervisor.KickSession
 }
 
 // New builds the dashboard server. rootCtx bounds the lifetime of anything
@@ -84,6 +87,18 @@ func (s *Server) StartExistingTwitchSession() {
 	s.startTwitchLocked(cfg, auth)
 }
 
+// StartExistingKickSession begins the Kick connection at boot if a
+// channel is already configured. Kick needs no auth setup, so unlike
+// Twitch this always connects immediately rather than waiting for the
+// dashboard to kick off a login flow.
+func (s *Server) StartExistingKickSession() {
+	cfg := s.dispatcher.Config()
+	if cfg.Kick.Channel == "" {
+		return
+	}
+	s.startKickLocked(cfg)
+}
+
 func (s *Server) newAuthenticator(cfg *config.Config) *twitchauth.Authenticator {
 	return twitchauth.New(cfg.Twitch.ClientID, supervisor.TokenCachePath, supervisor.TwitchAuthScopes, s.logger)
 }
@@ -101,6 +116,21 @@ func (s *Server) twitchConnected() bool {
 	s.twitchMu.Lock()
 	defer s.twitchMu.Unlock()
 	return s.twitchSession != nil && s.twitchSession.Client.Connected()
+}
+
+func (s *Server) startKickLocked(cfg *config.Config) {
+	s.kickMu.Lock()
+	defer s.kickMu.Unlock()
+	if s.kickSession != nil {
+		s.kickSession.Stop()
+	}
+	s.kickSession = supervisor.StartKick(s.rootCtx, cfg, s.logger, s.dispatcher, s.publishTextToSpeech)
+}
+
+func (s *Server) kickConnected() bool {
+	s.kickMu.Lock()
+	defer s.kickMu.Unlock()
+	return s.kickSession != nil && s.kickSession.Client.Connected()
 }
 
 // Bind claims a local port and returns the dashboard's URL. Separate from
@@ -150,6 +180,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/twitch/connect", s.handleTwitchConnect)
 	mux.HandleFunc("GET /api/twitch/auth", s.handleTwitchAuthState)
 	mux.HandleFunc("POST /api/twitch/logout", s.handleTwitchLogout)
+
+	mux.HandleFunc("POST /api/kick/setup", s.handleKickSetup)
+	mux.HandleFunc("POST /api/kick/connect", s.handleKickConnect)
+	mux.HandleFunc("POST /api/kick/logout", s.handleKickLogout)
 
 	mux.HandleFunc("GET /api/rewards", s.handleListRewards)
 	mux.HandleFunc("POST /api/rewards", s.handleAddReward)
@@ -204,6 +238,9 @@ type StatusResponse struct {
 	TwitchConnected  bool   `json:"twitchConnected"`
 	Paused           bool   `json:"paused"`
 	Channel          string `json:"channel"`
+	KickConfigured   bool   `json:"kickConfigured"`
+	KickConnected    bool   `json:"kickConnected"`
+	KickChannel      string `json:"kickChannel"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -215,6 +252,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 		TwitchConnected:  s.twitchConnected(),
 		Paused:           !s.dispatcher.Enabled(),
 		Channel:          cfg.Twitch.Channel,
+		KickConfigured:   cfg.Kick.Channel != "",
+		KickConnected:    s.kickConnected(),
+		KickChannel:      cfg.Kick.Channel,
 	})
 }
 

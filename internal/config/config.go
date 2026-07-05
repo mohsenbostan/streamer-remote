@@ -27,6 +27,13 @@ func (t Twitch) Validate() error {
 	return nil
 }
 
+// Kick holds the channel a Kick chat connection reads from. Unlike
+// Twitch, no client ID is needed: reading a Kick channel's public chat
+// requires no authentication.
+type Kick struct {
+	Channel string `yaml:"channel" json:"channel"`
+}
+
 // Blacklist holds streamer-added restrictions on top of the hardcoded base
 // denylist in the commands package (which can never be relaxed via config).
 type Blacklist struct {
@@ -58,6 +65,7 @@ type RewardProfile struct {
 
 type Config struct {
 	Twitch Twitch `yaml:"twitch" json:"twitch"`
+	Kick   Kick   `yaml:"kick" json:"kick"`
 
 	Prefix      string `yaml:"prefix" json:"prefix"`
 	ModOnlyMode bool   `yaml:"modOnlyMode" json:"modOnlyMode"`
@@ -94,6 +102,11 @@ twitch:
   clientId: ""            # Client ID of a free app you register at https://dev.twitch.tv/console/apps
                           # (Category: "Chat Bot", Client Type: "Public", OAuth Redirect URL: "http://localhost")
                           # the app will ask you to log in once and remembers you after that
+
+kick:
+  channel: ""             # your Kick channel slug (the part after kick.com/), lowercase
+                          # optional — leave empty if you don't stream to Kick
+                          # no app registration needed: reading a channel's chat is public
 
 prefix: "rc!"              # viewers trigger commands with e.g. rc!w or rc!w+shift
                           # kept unusual on purpose so it won't collide with Nightbot/StreamElements/Moobot commands
@@ -226,6 +239,25 @@ func UpdateTwitchFields(path, channel, clientID string) error {
 	}
 	yamlSetMapString(twitch, "channel", channel)
 	yamlSetMapString(twitch, "clientId", clientID)
+
+	return saveYAMLDoc(path, doc)
+}
+
+// UpdateKickChannel sets kick.channel in place, preserving the rest of
+// the file (comments included), same as UpdateTwitchFields. An empty
+// channel disables the Kick connection.
+func UpdateKickChannel(path, channel string) error {
+	doc, root, err := loadYAMLDoc(path)
+	if err != nil {
+		return err
+	}
+
+	kick := yamlMapValue(root, "kick")
+	if kick == nil {
+		kick = &yaml.Node{Kind: yaml.MappingNode}
+		root.Content = append(root.Content, yamlScalar("kick"), kick)
+	}
+	yamlSetMapString(kick, "channel", channel)
 
 	return saveYAMLDoc(path, doc)
 }

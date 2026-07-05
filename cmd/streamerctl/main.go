@@ -72,9 +72,10 @@ func main() {
 	server := webui.New(ctx, *configPath, core.Dispatcher, logger, version, *localOnly, hub)
 
 	if *localOnly {
-		logger.Info("running in local-only mode: no Twitch connection will be made")
+		logger.Info("running in local-only mode: no Twitch or Kick connection will be made")
 	} else {
 		server.StartExistingTwitchSession()
+		server.StartExistingKickSession()
 	}
 
 	listener, dashboardURL, err := server.Bind()

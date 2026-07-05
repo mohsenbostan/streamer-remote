@@ -168,6 +168,91 @@ function ReconnectCard({ channel, onConnected }: { channel: string; onConnected:
   )
 }
 
+// Shown when Kick has never been configured at all — asks for the
+// channel slug once. Unlike Twitch, saving connects immediately: reading
+// a Kick channel's public chat needs no login.
+function KickSetupCard({ onConnected }: { onConnected: () => void }) {
+  const [channel, setChannel] = useState("")
+  const [saving, setSaving] = useState(false)
+
+  async function connect() {
+    if (!channel.trim()) {
+      toast.error("Enter your Kick channel")
+      return
+    }
+    setSaving(true)
+    try {
+      await api.setupKick(channel.trim().toLowerCase())
+      toast.success("Connecting to Kick chat...")
+      onConnected()
+    } catch (e) {
+      toast.error("Setup failed", { description: String(e) })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Connect to Kick</CardTitle>
+        <CardDescription>
+          Optional — only if you also stream to Kick. No app registration needed: reading a
+          channel's chat is public.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="kickChannel">Kick channel</Label>
+          <Input
+            id="kickChannel"
+            placeholder="yourchannelname"
+            value={channel}
+            onChange={(e) => setChannel(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && connect()}
+          />
+        </div>
+        <Button onClick={connect} disabled={saving} className="self-start">
+          Save &amp; Connect
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Shown when a Kick channel is already saved but the connection isn't up
+// (app just started, or the connection dropped and hasn't reconnected
+// yet). Never re-asks for the channel — just (re)starts the connection.
+function KickReconnectCard({ channel, onConnected }: { channel: string; onConnected: () => void }) {
+  const [connecting, setConnecting] = useState(false)
+
+  async function connect() {
+    setConnecting(true)
+    try {
+      await api.connectKick()
+      onConnected()
+    } catch (e) {
+      toast.error("Couldn't connect", { description: String(e) })
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Reconnect to Kick</CardTitle>
+        <CardDescription>Set up for {channel}, but not connected right now.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button onClick={connect} disabled={connecting} className="self-start">
+          Connect
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 function QuickTestCard() {
   const [permission, setPermission] = useState<Permission>("broadcaster")
   const [text, setText] = useState("")
@@ -238,10 +323,17 @@ export function OverviewTab({
   const showSetup = status && !status.localOnly && !status.twitchConfigured
   const showReconnect = status && !status.localOnly && status.twitchConfigured && !status.twitchConnected
 
+  const showKickSetup = status && !status.localOnly && !status.kickConfigured
+  const showKickReconnect = status && !status.localOnly && status.kickConfigured && !status.kickConnected
+
   return (
     <div className="flex flex-col gap-6">
       {showSetup && <SetupCard onConnected={onChanged} />}
       {showReconnect && <ReconnectCard channel={status.channel} onConnected={onChanged} />}
+      {showKickSetup && <KickSetupCard onConnected={onChanged} />}
+      {showKickReconnect && (
+        <KickReconnectCard channel={status.kickChannel} onConnected={onChanged} />
+      )}
       <QuickTestCard />
     </div>
   )

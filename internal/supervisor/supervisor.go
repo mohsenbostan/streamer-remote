@@ -11,6 +11,7 @@ import (
 	"streamer-remote/internal/backoff"
 	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/kick"
 	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitch"
 	"streamer-remote/internal/twitchauth"
@@ -104,6 +105,40 @@ func (s *TwitchSession) Stop() {
 	s.cancel()
 }
 
+// KickSession is a running Kick chat connection, startable and stoppable
+// independently of Core so the dashboard can connect Kick on demand,
+// alongside or instead of Twitch — a streamer multistreaming to both
+// platforms gets both feeding the same dispatcher at once.
+type KickSession struct {
+	Client *kick.Client
+	cancel context.CancelFunc
+}
+
+// StartKick begins streaming chat from cfg.Kick.Channel into dispatcher.
+// Call Stop when done. Unlike StartTwitch, no auth setup is needed first:
+// reading a Kick channel's public chat requires no token.
+func StartKick(parentCtx context.Context, cfg *config.Config, logger *slog.Logger, dispatcher *commands.Dispatcher, onTextToSpeech func(string)) *KickSession {
+	ctx, cancel := context.WithCancel(parentCtx)
+
+	client := &kick.Client{
+		Channel: cfg.Kick.Channel,
+		Logger:  logger,
+	}
+
+	chatEvents := make(chan kick.ChatEvent, chatQueueSize)
+	go supervise(ctx, logger, "kick-chat", func(ctx context.Context) { client.Run(ctx, chatEvents) })
+	go supervise(ctx, logger, "kick-chat-forwarder", func(ctx context.Context) {
+		forwardKickEvents(ctx, chatEvents, dispatcher, onTextToSpeech)
+	})
+
+	return &KickSession{Client: client, cancel: cancel}
+}
+
+// Stop disconnects the Kick session. Safe to call once.
+func (s *KickSession) Stop() {
+	s.cancel()
+}
+
 func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, dispatcher *commands.Dispatcher, onTextToSpeech func(string)) {
 	for {
 		select {
@@ -118,6 +153,27 @@ func forwardTwitchEvents(ctx context.Context, events <-chan twitch.ChatEvent, di
 			}
 			dispatcher.Handle(commands.ChatMessage{
 				Username:   e.ChatterLogin,
+				Permission: commands.PermissionFromBadges(e.Badges),
+				Text:       e.Text,
+			})
+		}
+	}
+}
+
+func forwardKickEvents(ctx context.Context, events <-chan kick.ChatEvent, dispatcher *commands.Dispatcher, onTextToSpeech func(string)) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-events:
+			if text, ok := tts.Message(e.Text); ok {
+				if dispatcher.Config().TextToSpeechEnabled && onTextToSpeech != nil {
+					onTextToSpeech(text)
+				}
+				continue
+			}
+			dispatcher.Handle(commands.ChatMessage{
+				Username:   e.Username,
 				Permission: commands.PermissionFromBadges(e.Badges),
 				Text:       e.Text,
 			})
