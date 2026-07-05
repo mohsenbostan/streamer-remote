@@ -246,6 +246,9 @@ export function SettingsTab({
       <TwitchAccountCard status={status} onChanged={onChanged} />
 
       <Separator />
+      <KickAccountCard status={status} onChanged={onChanged} />
+
+      <Separator />
       <UpdateCard />
     </div>
   )
@@ -288,6 +291,48 @@ function TwitchAccountCard({
         <p className="mt-2 text-xs text-muted-foreground">
           Forgets the saved channel, Client ID, and login — use this to set up a different Twitch
           account or channel from scratch.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function KickAccountCard({
+  status,
+  onChanged,
+}: {
+  status: StatusResponse | null
+  onChanged: () => void
+}) {
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  if (!status || status.localOnly || !status.kickConfigured) return null
+
+  async function logout() {
+    setLoggingOut(true)
+    try {
+      await api.logoutKick()
+      toast.success("Disconnected from Kick")
+      onChanged()
+    } catch (e) {
+      toast.error("Couldn't disconnect", { description: String(e) })
+    } finally {
+      setLoggingOut(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Kick account</CardTitle>
+        <CardDescription>Connected as {status.kickChannel}.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button variant="outline" onClick={logout} disabled={loggingOut} className="gap-1.5">
+          <LogOut className="size-4" /> Log out
+        </Button>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Forgets the saved channel — use this to switch to a different Kick channel.
         </p>
       </CardContent>
     </Card>
