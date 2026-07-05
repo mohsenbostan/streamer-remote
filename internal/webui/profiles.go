@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
 )
 
@@ -25,13 +26,17 @@ func (s *Server) handleListProfiles(w http.ResponseWriter, _ *http.Request) {
 }
 
 type saveProfileRequest struct {
-	Name string `json:"name"`
+	Name    string                `json:"name"`
+	Color   string                `json:"color"`
+	Rewards []config.RewardAction `json:"rewards"`
 }
 
-// handleSaveProfile snapshots the currently live rewardActions under the
-// given name, creating the profile or overwriting it if the name already
-// exists. Since the snapshot is exactly what's live, saving also marks it
-// the active profile.
+// handleSaveProfile creates or overwrites a profile with the given
+// rewards, which the caller supplies explicitly: either a snapshot of
+// what's currently live (the "save current as profile" button) or a
+// freshly drafted set (the "new profile" editor), neither of which
+// touches Twitch or the live rewardActions until the profile is later
+// activated.
 func (s *Server) handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 	var req saveProfileRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -45,14 +50,23 @@ func (s *Server) handleSaveProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := s.dispatcher.Config()
-	rewards := append([]config.RewardAction{}, cfg.RewardActions...)
-	profile := config.RewardProfile{Name: name, Rewards: rewards}
-
-	if err := config.SaveRewardProfile(s.configPath, profile); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	rewards := make([]config.RewardAction, 0, len(req.Rewards))
+	for _, ra := range req.Rewards {
+		action := strings.ToLower(strings.TrimSpace(ra.Action))
+		title := strings.TrimSpace(ra.RewardTitle)
+		if action == "" || title == "" || ra.Cost <= 0 {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("every reward needs an action, title, and a positive cost"))
+			return
+		}
+		if _, err := commands.ParseSequence(action, cfg); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		rewards = append(rewards, config.RewardAction{Action: action, RewardTitle: title, Cost: ra.Cost})
 	}
-	if err := config.SetActiveRewardProfile(s.configPath, name); err != nil {
+
+	profile := config.RewardProfile{Name: name, Color: strings.TrimSpace(req.Color), Rewards: rewards}
+	if err := config.SaveRewardProfile(s.configPath, profile); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -82,7 +96,7 @@ func (s *Server) handleDeleteProfile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleActivateProfile swaps the live rewards for the named profile's:
+// handleActivateProfile swaps the live rewards for the named profile:
 // it tears down every currently live reward on Twitch, then creates one
 // per entry in the target profile, replacing rewardActions with the fresh
 // set (new RewardIDs, since Twitch assigns a new one on every creation).

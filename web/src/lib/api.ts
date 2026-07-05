@@ -34,8 +34,15 @@ export interface RewardAction {
   rewardId: string
 }
 
+export interface RewardDraft {
+  action: string
+  rewardTitle: string
+  cost: number
+}
+
 export interface RewardProfile {
   name: string
+  color?: string
   rewards: RewardAction[]
 }
 
@@ -112,8 +119,11 @@ export const api = {
     request<void>(`/api/rewards/${encodeURIComponent(rewardId)}`, { method: "DELETE" }),
 
   rewardProfiles: () => request<RewardProfilesResponse>("/api/reward-profiles"),
-  saveRewardProfile: (name: string) =>
-    request<RewardProfile>("/api/reward-profiles", { method: "POST", body: JSON.stringify({ name }) }),
+  saveRewardProfile: (name: string, color: string, rewards: RewardDraft[]) =>
+    request<RewardProfile>("/api/reward-profiles", {
+      method: "POST",
+      body: JSON.stringify({ name, color, rewards }),
+    }),
   deleteRewardProfile: (name: string) =>
     request<void>(`/api/reward-profiles/${encodeURIComponent(name)}`, { method: "DELETE" }),
   activateRewardProfile: (name: string) =>

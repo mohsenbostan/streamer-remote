@@ -234,7 +234,14 @@ func TestRewardProfilesSaveAndDelete(t *testing.T) {
 	ts := httptest.NewServer(srv.routes())
 	defer ts.Close()
 
-	resp := doJSON(t, ts, http.MethodPost, "/api/reward-profiles", saveProfileRequest{Name: "Chill"})
+	req := saveProfileRequest{
+		Name:  "Chill",
+		Color: "#38bdf8",
+		Rewards: []config.RewardAction{
+			{Action: "lwin", RewardTitle: "Lock Screen", Cost: 1000},
+		},
+	}
+	resp := doJSON(t, ts, http.MethodPost, "/api/reward-profiles", req)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -246,15 +253,18 @@ func TestRewardProfilesSaveAndDelete(t *testing.T) {
 	if err := json.NewDecoder(listResp.Body).Decode(&list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Profiles) != 1 || list.Profiles[0].Name != "Chill" || list.Active != "Chill" {
-		t.Fatalf("expected 'Chill' saved and active, got %+v", list)
+	if len(list.Profiles) != 1 || list.Profiles[0].Name != "Chill" || list.Profiles[0].Color != "#38bdf8" {
+		t.Fatalf("expected 'Chill' saved with its color, got %+v", list)
+	}
+	if list.Active != "" {
+		t.Fatalf("expected saving a profile to leave nothing active, got %q", list.Active)
 	}
 
 	reloaded, err := config.Load(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(reloaded.RewardProfiles) != 1 || reloaded.ActiveRewardProfile != "Chill" {
+	if len(reloaded.RewardProfiles) != 1 || len(reloaded.RewardProfiles[0].Rewards) != 1 {
 		t.Fatalf("expected profile persisted to disk, got %+v", reloaded)
 	}
 
@@ -270,5 +280,21 @@ func TestRewardProfilesSaveAndDelete(t *testing.T) {
 	}
 	if len(reloaded.RewardProfiles) != 0 {
 		t.Fatalf("expected profile removed, got %+v", reloaded.RewardProfiles)
+	}
+}
+
+func TestRewardProfilesRejectsInvalidAction(t *testing.T) {
+	srv, _ := testServer(t)
+	ts := httptest.NewServer(srv.routes())
+	defer ts.Close()
+
+	req := saveProfileRequest{
+		Name:    "Bad",
+		Rewards: []config.RewardAction{{Action: "not-a-real-key", RewardTitle: "Oops", Cost: 100}},
+	}
+	resp := doJSON(t, ts, http.MethodPost, "/api/reward-profiles", req)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an invalid action, got %d", resp.StatusCode)
 	}
 }

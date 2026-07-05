@@ -52,6 +52,7 @@ type RewardAction struct {
 // exist for whichever set is actually live on Twitch at a given moment.
 type RewardProfile struct {
 	Name    string         `yaml:"name" json:"name"`
+	Color   string         `yaml:"color,omitempty" json:"color,omitempty"`
 	Rewards []RewardAction `yaml:"rewards" json:"rewards"`
 }
 
