@@ -10,13 +10,23 @@ import { useEffect } from "react"
 
 export default function App() {
   const { data: status, refresh } = usePolling(() => api.status(), 3000)
+  const isLiveMonitorPopout = new URLSearchParams(window.location.search).get("popout") === "live-monitor"
 
   useEffect(() => {
+    if (isLiveMonitorPopout) return
     return subscribeEvents((event) => {
       if (event.msg !== "text-to-speech") return
       speak(event.attrs.text)
     })
-  }, [])
+  }, [isLiveMonitorPopout])
+
+  if (isLiveMonitorPopout) {
+    return (
+      <div className="min-h-screen bg-background p-6">
+        <LiveMonitorTab popout />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">

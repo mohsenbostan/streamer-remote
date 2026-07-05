@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { subscribeEvents, type LiveEvent } from "@/lib/api"
 import {
   AlertTriangle,
+  ExternalLink,
   Gamepad2,
   Gift,
   Pause,
@@ -51,7 +52,12 @@ function formatTime(iso: string) {
   }
 }
 
-export function LiveMonitorTab() {
+function openLiveMonitorPopout() {
+  const url = `${window.location.pathname}?popout=live-monitor`
+  window.open(url, "streamer-remote-live-monitor", "width=480,height=760")
+}
+
+export function LiveMonitorTab({ popout = false }: { popout?: boolean }) {
   const [events, setEvents] = useState<LiveEvent[]>([])
   const [paused, setPaused] = useState(false)
   const pausedRef = useRef(paused)
@@ -72,6 +78,11 @@ export function LiveMonitorTab() {
           <CardDescription>Every command, block, and connection event as it happens.</CardDescription>
         </div>
         <div className="flex gap-2">
+          {!popout && (
+            <Button variant="outline" size="sm" onClick={openLiveMonitorPopout} className="gap-1.5">
+              <ExternalLink className="size-4" /> Pop out
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
             {paused ? "Resume feed" : "Freeze feed"}
           </Button>
@@ -81,7 +92,7 @@ export function LiveMonitorTab() {
         </div>
       </CardHeader>
       <CardContent>
-        <ScrollArea className="h-[60vh] rounded-md border">
+        <ScrollArea className={`${popout ? "h-[80vh]" : "h-[60vh]"} rounded-md border`}>
           {events.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
               Nothing yet — events will appear here in real time.
