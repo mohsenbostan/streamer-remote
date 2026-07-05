@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/core/commands"
 )
 
 type rewardProfilesResponse struct {

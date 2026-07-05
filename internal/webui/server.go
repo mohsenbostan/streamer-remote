@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/core/commands"
 	"streamer-remote/internal/supervisor"
 	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitchauth"

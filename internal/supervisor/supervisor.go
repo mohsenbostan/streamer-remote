@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"streamer-remote/internal/backoff"
-	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/core/commands"
 	"streamer-remote/internal/input"
 	"streamer-remote/internal/kick"
 	"streamer-remote/internal/tts"

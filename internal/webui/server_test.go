@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"streamer-remote/internal/commands"
 	"streamer-remote/internal/config"
+	"streamer-remote/internal/core/commands"
 	"streamer-remote/internal/tts"
 )
 
