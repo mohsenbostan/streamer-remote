@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"streamer-remote/internal/app"
 	"streamer-remote/internal/config"
 	"streamer-remote/internal/core/commands"
-	"streamer-remote/internal/supervisor"
 	"streamer-remote/internal/tts"
 	"streamer-remote/internal/twitchauth"
 )
@@ -40,11 +40,11 @@ type Server struct {
 	rootCtx    context.Context
 
 	twitchMu      sync.Mutex
-	twitchSession *supervisor.TwitchSession
+	twitchSession *app.TwitchSession
 	authState     twitchAuthState
 
 	kickMu      sync.Mutex
-	kickSession *supervisor.KickSession
+	kickSession *app.KickSession
 }
 
 // New builds the dashboard server. rootCtx bounds the lifetime of anything
@@ -80,8 +80,8 @@ func (s *Server) StartExistingTwitchSession() {
 	// streamer stuck on "not connected" with no visible way to fix it.
 	// The Overview tab's "Connect" button (which does set OnCode) is the
 	// right path for that case.
-	tok, err := twitchauth.LoadToken(supervisor.TokenCachePath)
-	if err != nil || !tok.HasScopes(supervisor.TwitchAuthScopes) {
+	tok, err := twitchauth.LoadToken(app.TokenCachePath)
+	if err != nil || !tok.HasScopes(app.TwitchAuthScopes) {
 		return
 	}
 	s.startTwitchLocked(cfg, auth)
@@ -100,7 +100,7 @@ func (s *Server) StartExistingKickSession() {
 }
 
 func (s *Server) newAuthenticator(cfg *config.Config) *twitchauth.Authenticator {
-	return twitchauth.New(cfg.Twitch.ClientID, supervisor.TokenCachePath, supervisor.TwitchAuthScopes, s.logger)
+	return twitchauth.New(cfg.Twitch.ClientID, app.TokenCachePath, app.TwitchAuthScopes, s.logger)
 }
 
 func (s *Server) startTwitchLocked(cfg *config.Config, auth *twitchauth.Authenticator) {
@@ -109,7 +109,7 @@ func (s *Server) startTwitchLocked(cfg *config.Config, auth *twitchauth.Authenti
 	if s.twitchSession != nil {
 		s.twitchSession.Stop()
 	}
-	s.twitchSession = supervisor.StartTwitch(s.rootCtx, cfg, s.logger, s.dispatcher, auth, s.publishTextToSpeech)
+	s.twitchSession = app.StartTwitch(s.rootCtx, cfg, s.logger, s.dispatcher, auth, s.publishTextToSpeech)
 }
 
 func (s *Server) twitchConnected() bool {
@@ -124,7 +124,7 @@ func (s *Server) startKickLocked(cfg *config.Config) {
 	if s.kickSession != nil {
 		s.kickSession.Stop()
 	}
-	s.kickSession = supervisor.StartKick(s.rootCtx, cfg, s.logger, s.dispatcher, s.publishTextToSpeech)
+	s.kickSession = app.StartKick(s.rootCtx, cfg, s.logger, s.dispatcher, s.publishTextToSpeech)
 }
 
 func (s *Server) kickConnected() bool {

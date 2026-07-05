@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"streamer-remote/internal/app"
 	"streamer-remote/internal/config"
-	"streamer-remote/internal/supervisor"
 )
 
 // twitchAuthState tracks the in-progress device-code login so the
@@ -141,7 +141,7 @@ func (s *Server) handleTwitchLogout(w http.ResponseWriter, _ *http.Request) {
 	}
 	s.twitchMu.Unlock()
 
-	if err := os.Remove(supervisor.TokenCachePath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(app.TokenCachePath); err != nil && !os.IsNotExist(err) {
 		s.logger.Warn("could not remove cached twitch token", "error", err)
 	}
 

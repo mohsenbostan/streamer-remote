@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"streamer-remote/internal/app"
 	"streamer-remote/internal/browser"
 	"streamer-remote/internal/config"
 	"streamer-remote/internal/logging"
 	"streamer-remote/internal/msgbox"
-	"streamer-remote/internal/supervisor"
 	"streamer-remote/internal/tray"
 	"streamer-remote/internal/update"
 	"streamer-remote/internal/webui"
@@ -68,7 +68,7 @@ func main() {
 	logger, closeLog := logging.New(logOpts, webui.NewLogHandler(hub))
 	defer closeLog.Close()
 
-	core := supervisor.NewCore(ctx, cfg, logger)
+	core := app.NewCore(ctx, cfg, logger)
 	server := webui.New(ctx, *configPath, core.Dispatcher, logger, version, *localOnly, hub)
 
 	if *localOnly {

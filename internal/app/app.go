@@ -1,7 +1,7 @@
-// Package supervisor wires the app's subsystems together and keeps them
+// Package app wires the app's subsystems together and keeps them
 // running: any subsystem that panics or exits unexpectedly is restarted
 // with backoff rather than taking the whole process down.
-package supervisor
+package app
 
 import (
 	"context"
